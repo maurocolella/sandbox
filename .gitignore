@@ -1,0 +1,54 @@
+### Monorepo roots to exclude
+tm-align.rs/
+whitepapers/
+
+### Rust
+target/
+**/*.rs.bk
+
+### Node / pnpm / logs
+**/node_modules/
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+*.log
+
+### Lockfiles (keep only root pnpm-lock.yaml)
+**/pnpm-lock.yaml
+!/pnpm-lock.yaml
+**/package-lock.json
+**/yarn.lock
+
+### Build output
+**/dist/
+**/build/
+**/dist-ssr/
+**/coverage/
+
+### Caches
+**/.vite/
+**/.rollup.cache/
+**/.parcel-cache/
+**/.cache/
+**/.eslintcache
+**/.pnpm-store/
+
+### TypeScript
+**/*.tsbuildinfo
+
+### Env files
+.env
+.env.*
+!.env.example
+!.env*.example
+
+### Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+### Hosting
+.vercel/
+.netlify/

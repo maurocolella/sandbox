@@ -1,0 +1,3 @@
+packages:
+  - 'pdb-viewer'
+  - 'pdb-parser'

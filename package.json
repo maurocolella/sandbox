@@ -1,0 +1,24 @@
+{
+  "name": "whitepaper-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "workspaces": [
+    "pdb-viewer",
+    "pdb-parser"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "build:viewer": "pnpm --filter pdb-viewer build",
+    "build:parser": "pnpm --filter pdb-parser build",
+    "dev:viewer": "pnpm -C pdb-viewer dev",
+    "test": "pnpm -r test",
+    "clean": "pnpm -r clean || true"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  }
+}
