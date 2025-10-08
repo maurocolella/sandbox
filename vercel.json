@@ -1,0 +1,6 @@
+{
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter pdb-parser build && pnpm --filter pdb-viewer build",
+  "outputDirectory": "pdb-viewer/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
+}
