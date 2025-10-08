@@ -1,0 +1,53 @@
+{
+  "name": "pdb-viewer",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm exec vite",
+    "build": "pnpm exec tsc -b && pnpm exec vite build",
+    "lint": "pnpm exec eslint .",
+    "preview": "pnpm exec vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maurocolella/pdb-viewer.git"
+  },
+  "homepage": "https://mauro-colella.com",
+  "author": "Mauro Colella <mauro.l.colella@gmail.com>",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pdb",
+    "protein",
+    "molecular-visualization",
+    "threejs",
+    "react-three-fiber",
+    "viewer",
+    "cpk"
+  ],
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "pdb-parser": "workspace:*",
+    "three": "^0.160.0",
+    "@react-three/fiber": "^9.0.0",
+    "@react-three/drei": "^9.121.0",
+    "leva": "^0.10.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/three": "^0.180.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.4.0",
+    "typescript-eslint": "^8.43.0",
+    "vite": "^7.1.6"
+  }
+}

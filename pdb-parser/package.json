@@ -1,0 +1,41 @@
+{
+  "name": "pdb-parser",
+  "version": "0.1.0",
+  "description": "Lean PDB parser that returns a renderer-agnostic MolScene for web visualization.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "prepare": "pnpm run build",
+    "clean": "rm -rf dist",
+    "test": "pnpm run build && vitest run",
+    "prepublishOnly": "pnpm run clean && pnpm run build && pnpm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maurocolella/pdb-parser.git"
+  },
+  "author": "Mauro Colella <mauro.l.colella@gmail.com>",
+  "homepage": "https://mauro-colella.com",
+  "peerDependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "@types/node": "^20.11.0",
+    "vitest": "^1.6.0"
+  },
+  "license": "Apache-2.0"
+}
