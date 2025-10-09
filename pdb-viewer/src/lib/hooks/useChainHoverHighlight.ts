@@ -123,6 +123,7 @@ export function useChainHoverHighlight(
 
   // Handlers
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
     if (!eventsEnabled) return;
     if (!scene || !atoms) return;
     const id = e.instanceId;

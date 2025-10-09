@@ -29,6 +29,8 @@ export function useOutlineOverlays(
     sphereGeomRef.current = new THREE.SphereGeometry(1, opts.sphereDetail, opts.sphereDetail);
     const atomMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.0, depthWrite: false });
     const aMesh = new THREE.InstancedMesh(sphereGeomRef.current, atomMat, scene.atoms.count);
+    (aMesh as THREE.Object3D & { userData: { isOutlineOverlay?: boolean } }).userData.isOutlineOverlay = true;
+    // Do not participate in raycasting
     (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => {};
     aMesh.count = 0;
     atomOverlay.current = aMesh;
@@ -39,6 +41,7 @@ export function useOutlineOverlays(
     if (scene.bonds && scene.bonds.count > 0) {
       const bondMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.0, depthWrite: false });
       const bMesh = new THREE.InstancedMesh(cylGeomRef.current, bondMat, scene.bonds.count);
+      (bMesh as THREE.Object3D & { userData: { isOutlineOverlay?: boolean } }).userData.isOutlineOverlay = true;
       (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => {};
       bMesh.count = 0;
       bondOverlay.current = bMesh;

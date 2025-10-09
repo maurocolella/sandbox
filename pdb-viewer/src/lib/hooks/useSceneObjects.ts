@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import type { MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
 import { makeAtomsMesh, makeBackboneLines, makeBondTubes } from "pdb-parser";
+import * as THREE from "three";
 import type { InstancedMesh as InstancedMeshType, LineSegments, Material } from "three";
 
 export interface SceneBuildOptions {
@@ -25,9 +26,11 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
       });
       // Uniform white material (disable vertex colors) to keep look consistent with current viewer.
       if (atoms) {
-        const mat = atoms.material as unknown as { vertexColors?: boolean; color?: { set: (v: string) => void }; needsUpdate?: boolean };
+        const mat = atoms.material as unknown as { vertexColors?: boolean; color?: { set: (v: string) => void }; side?: number; needsUpdate?: boolean };
         if (typeof mat.vertexColors !== "undefined") mat.vertexColors = false;
         if (mat.color) mat.color.set("#ffffff");
+        // Widen effective pickable surface near silhouettes
+        if (typeof mat.side !== "undefined") mat.side = THREE.DoubleSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
       }
     }
