@@ -11,6 +11,8 @@ import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraF
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
 import { useChainHoverHighlight } from "../lib/hooks/useChainHoverHighlight";
+import { useAtomHoverHighlight } from "../lib/hooks/useAtomHoverHighlight";
+import { useResidueHoverHighlight } from "../lib/hooks/useResidueHoverHighlight";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 
 export function MoleculeView() {
@@ -63,6 +65,12 @@ export function MoleculeView() {
     },
   });
 
+  // Selection toolbox: atom/residue/chain + hover tint
+  const selection = useControls("Selection", {
+    mode: { value: "residue", options: ["atom", "residue", "chain"] as const },
+    hoverTint: { value: "#ff00ff" },
+  });
+
   const { scene, error, loading } = useMolScene(sourceUrl, parseOpts as ParseOptions);
 
   // Chain selection domain hook
@@ -96,8 +104,27 @@ export function MoleculeView() {
     backbone: overlays.backbone && common.representation === "spheres" ? {} : false,
   });
 
-  // Chain hover highlight (spheres representation only; no-op when atoms undefined)
-  const hover = useChainHoverHighlight(filteredScene, objects.atoms, 0xff00ff);
+  // Hover highlight hooks for different selection granularity (only one enabled at a time)
+  const isSpheres = common.representation === "spheres";
+  const atomHover = useAtomHoverHighlight(
+    filteredScene,
+    objects.atoms,
+    selection.hoverTint as string,
+    isSpheres && selection.mode === "atom"
+  );
+  const residueHover = useResidueHoverHighlight(
+    filteredScene,
+    objects.atoms,
+    selection.hoverTint as string,
+    isSpheres && selection.mode === "residue"
+  );
+  const chainHover = useChainHoverHighlight(
+    filteredScene,
+    objects.atoms,
+    selection.hoverTint as string,
+    isSpheres && selection.mode === "chain"
+  );
+  const hover = selection.mode === "atom" ? atomHover : selection.mode === "residue" ? residueHover : chainHover;
 
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
@@ -134,7 +161,7 @@ export function MoleculeView() {
           style={{ width: 320, padding: 10, background: "#222", color: "#eee", border: "1px solid #444", borderRadius: 4 }}
         />
       </div>
-      {/* Chain selector panel */}
+      {/* Chain selector panel (always visible; chain visibility is orthogonal to selection mode) */}
       {scene?.tables?.chains && scene.tables.chains.length > 0 && (
         <div style={{ position: "absolute", top: 52, left: 10, zIndex: 1, background: "#1b1b1b", border: "1px solid #333", borderRadius: 6, padding: 10, color: "#ddd", fontFamily: "system-ui, sans-serif", fontSize: 12, maxHeight: 240, overflowY: "auto", minWidth: 160 }}>
           <div style={{ marginBottom: 6, fontWeight: 600 }}>Chains</div>
