@@ -27,8 +27,8 @@ export function useMolScene(url: string, options: ParseOptions): { scene: MolSce
       }
     })();
     return () => { mounted = false; };
-  // We purposefully track the relevant fields instead of the options object identity.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // We purposefully track the relevant fields instead of the options object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, options.altLocPolicy, options.modelSelection, options.bondPolicy]);
 
   return { scene, error, loading };

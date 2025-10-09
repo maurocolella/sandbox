@@ -1,15 +1,15 @@
-import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
-import { useMolScene } from "./useMolScene";
-import { makeRibbonMesh, makeFlatRibbonMesh } from "pdb-parser";
+import { useMolScene } from "../lib/hooks/useMolScene";
 import type { ParseOptions, MolScene, AtomMeshOptions } from "pdb-parser";
-import { Mesh } from "three";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useSceneObjects } from "../lib/hooks/useSceneObjects";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
+import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
+import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
 
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 
@@ -96,46 +96,20 @@ export function MoleculeView() {
     backbone: overlays.backbone && common.representation === "spheres" ? {} : false,
   });
 
-  // Build ribbon group only when selected
-  const ribbonGroup = useMemo(() => {
-    if (!filteredScene) return null;
-    if (common.representation === "ribbon-tube") {
-      return makeRibbonMesh(filteredScene, {
-        radius: 0.4,
-        radialSegments: 12,
-        tubularSegmentsPerPoint: 6,
-        materialKind: common.materialKind as AtomMeshOptions["materialKind"],
-        color: 0xffffff,
-      });
-    }
-    if (common.representation === "ribbon-flat") {
-      return makeFlatRibbonMesh(filteredScene, {
-        width: 1.2,
-        segmentsPerPoint: 6,
-        materialKind: common.materialKind as AtomMeshOptions["materialKind"],
-        color: 0xffffff,
-        doubleSided: true,
-        thickness: ribbon.thickness,
-      });
-    }
-    return null;
-  }, [filteredScene, common.representation, common.materialKind, ribbon.thickness]);
+  // Ribbon group via hook (handles build + disposal)
+  const ribbonGroup = useRibbonGroup(
+    filteredScene,
+    common.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
+    common.materialKind as AtomMeshOptions["materialKind"],
+    { thickness: ribbon.thickness }
+  );
 
-  // Dispose ribbon on change/unmount
-  useEffect(() => {
-    return () => {
-      if (!ribbonGroup) return;
-      ribbonGroup.traverse((obj) => {
-        if (obj instanceof Mesh) {
-          // geometry is BufferGeometry on Mesh
-          obj.geometry.dispose();
-          const m = obj.material;
-          if (Array.isArray(m)) m.forEach((mm) => mm.dispose());
-          else m.dispose();
-        }
-      });
-    };
-  }, [ribbonGroup]);
+  // Render keys (derived from selection + overlays + representation)
+  const keys = useRenderKeys(selectionKey, common.representation as Representation, {
+    atoms: overlays.atoms,
+    bonds: overlays.bonds,
+    backbone: overlays.backbone,
+  });
 
   useEffect(() => {
     document.body.style.background = common.background;
@@ -205,16 +179,16 @@ export function MoleculeView() {
         <Suspense fallback={null}>
           {common.representation !== "spheres" && ribbonGroup && (
             <>
-              <primitive key={`sel:${selectionKey}|rep:${common.representation}-ribbon`} object={ribbonGroup} />
-              {overlays.bonds && objects.bonds && <primitive key={`sel:${selectionKey}|rep:${common.representation}-bonds`} object={objects.bonds} />}
-              {overlays.backbone && objects.backbone && <primitive key={`sel:${selectionKey}|rep:${common.representation}-backbone`} object={objects.backbone} />}
+              <primitive key={keys.ribbon} object={ribbonGroup} />
+              {overlays.bonds && objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
+              {overlays.backbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
           )}
           {common.representation === "spheres" && (
             <>
-              {objects.atoms && <primitive key={`sel:${selectionKey}|rep:${common.representation}-atoms`} object={objects.atoms} />}
-              {objects.bonds && <primitive key={`sel:${selectionKey}|rep:${common.representation}-bonds`} object={objects.bonds} />}
-              {objects.backbone && <primitive key={`sel:${selectionKey}|rep:${common.representation}-backbone`} object={objects.backbone} />}
+              {objects.atoms && <primitive key={keys.atoms} object={objects.atoms} />}
+              {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
+              {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
           )}
         </Suspense>
