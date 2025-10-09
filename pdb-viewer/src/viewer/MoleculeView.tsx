@@ -15,6 +15,7 @@ import { useChainHoverHighlight } from "../lib/hooks/useChainHoverHighlight";
 import { useAtomHoverHighlight } from "../lib/hooks/useAtomHoverHighlight";
 import { useResidueHoverHighlight } from "../lib/hooks/useResidueHoverHighlight";
 import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
+import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 
 export function MoleculeView() {
@@ -72,6 +73,7 @@ export function MoleculeView() {
     mode: { value: "chain", options: ["atom", "residue", "chain"] as const },
     hoverTint: { value: "#ff00ff" },
     outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
+    onTopHighlight: { value: true },
   });
 
   const { scene, error, loading } = useMolScene(sourceUrl, parseOpts as ParseOptions);
@@ -142,6 +144,17 @@ export function MoleculeView() {
     selection.hoverTint as string,
     Boolean(objects.bonds)
   );
+
+  // Always-on-top hover overlays (depthTest=false) drawn last
+  const { atomOverlay: hoverAtomOverlay, bondOverlay: hoverBondOverlay } = useHoverOverlays(filteredScene, {
+    mode: selection.mode as "atom" | "residue" | "chain",
+    hoveredAtom: atomHover.hovered ?? -1,
+    hoveredResidue: residueHover.hovered,
+    hoveredChain: chainHover.hovered,
+    color: selection.hoverTint as string,
+    radiusScale: spheres.radiusScale,
+    sphereDetail: spheres.sphereDetail,
+  });
 
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
@@ -277,6 +290,12 @@ export function MoleculeView() {
                 )}
                 {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
                 {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+                {isSpheres && selection.onTopHighlight && hoverAtomOverlay && (
+                  <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />
+                )}
+                {isSpheres && selection.onTopHighlight && hoverBondOverlay && (
+                  <primitive key="hover-bond-overlay" object={hoverBondOverlay} />
+                )}
               </>
             )}
           </group>
