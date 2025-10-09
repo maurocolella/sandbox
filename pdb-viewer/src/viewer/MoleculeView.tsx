@@ -10,7 +10,7 @@ import { useSceneObjects } from "../lib/hooks/useSceneObjects";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
-
+import { useChainHoverHighlight } from "../lib/hooks/useChainHoverHighlight";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 
 export function MoleculeView() {
@@ -95,6 +95,9 @@ export function MoleculeView() {
     bonds: overlays.bonds,
     backbone: overlays.backbone && common.representation === "spheres" ? {} : false,
   });
+
+  // Chain hover highlight (spheres representation only; no-op when atoms undefined)
+  const hover = useChainHoverHighlight(filteredScene, objects.atoms, 0xff00ff);
 
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
@@ -186,7 +189,14 @@ export function MoleculeView() {
           )}
           {common.representation === "spheres" && (
             <>
-              {objects.atoms && <primitive key={keys.atoms} object={objects.atoms} />}
+              {objects.atoms && (
+                <primitive
+                  key={keys.atoms}
+                  object={objects.atoms}
+                  onPointerMove={hover.onPointerMove}
+                  onPointerOut={hover.onPointerOut}
+                />
+              )}
               {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
               {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
