@@ -70,7 +70,7 @@ export function MoleculeView() {
   // Selection toolbox: atom/residue/chain + hover tint
   const selection = useControls("Selection", {
     mode: { value: "chain", options: ["atom", "residue", "chain"] as const },
-    hoverTint: { value: "#ffffff" },
+    hoverTint: { value: "#ff00ff" },
     outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
   });
 
