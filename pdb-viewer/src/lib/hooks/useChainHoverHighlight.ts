@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { MolScene } from "pdb-parser";
@@ -20,6 +20,7 @@ type OnBeforeCompileFn = (shader: unknown, renderer: unknown) => void;
 export interface ChainHoverHandlers {
   onPointerMove: (e: ThreeEvent<PointerEvent>) => void;
   onPointerOut: () => void;
+  hovered: number;
 }
 
 export function useChainHoverHighlight(
@@ -29,6 +30,7 @@ export function useChainHoverHighlight(
   enabled: boolean = true
 ): ChainHoverHandlers {
   const hoveredChainRef = useRef<number>(-1);
+  const [hovered, setHovered] = useState<number>(-1);
   const tintColor = useMemo(() => new THREE.Color(tint), [tint]);
   const uniformsRef = useRef<{ uHoveredChain: { value: number }; uTint: { value: THREE.Color } } | null>(null);
 
@@ -109,6 +111,15 @@ export function useChainHoverHighlight(
     };
   }, [scene, atoms, tintColor, enabled]);
 
+  // If disabled, ensure hover state is cleared
+  useEffect(() => {
+    if (!enabled) {
+      hoveredChainRef.current = -1;
+      setHovered(-1);
+      if (uniformsRef.current) uniformsRef.current.uHoveredChain.value = -1;
+    }
+  }, [enabled]);
+
   // Handlers
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
     if (!enabled) return;
@@ -119,6 +130,7 @@ export function useChainHoverHighlight(
     if (ci == null) return;
     if (hoveredChainRef.current !== ci) {
       hoveredChainRef.current = ci;
+      setHovered(ci);
       if (uniformsRef.current) uniformsRef.current.uHoveredChain.value = ci;
     }
   };
@@ -127,9 +139,10 @@ export function useChainHoverHighlight(
     if (!enabled) return;
     if (hoveredChainRef.current !== -1) {
       hoveredChainRef.current = -1;
+      setHovered(-1);
       if (uniformsRef.current) uniformsRef.current.uHoveredChain.value = -1;
     }
   };
 
-  return { onPointerMove, onPointerOut };
+  return { onPointerMove, onPointerOut, hovered };
 }

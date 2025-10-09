@@ -1,7 +1,8 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
+import * as THREE from "three";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import type { ParseOptions, MolScene, AtomMeshOptions } from "pdb-parser";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
@@ -13,6 +14,7 @@ import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
 import { useChainHoverHighlight } from "../lib/hooks/useChainHoverHighlight";
 import { useAtomHoverHighlight } from "../lib/hooks/useAtomHoverHighlight";
 import { useResidueHoverHighlight } from "../lib/hooks/useResidueHoverHighlight";
+import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 
 export function MoleculeView() {
@@ -67,7 +69,7 @@ export function MoleculeView() {
 
   // Selection toolbox: atom/residue/chain + hover tint
   const selection = useControls("Selection", {
-    mode: { value: "residue", options: ["atom", "residue", "chain"] as const },
+    mode: { value: "chain", options: ["atom", "residue", "chain"] as const },
     hoverTint: { value: "#ff00ff" },
   });
 
@@ -126,6 +128,17 @@ export function MoleculeView() {
   );
   const hover = selection.mode === "atom" ? atomHover : selection.mode === "residue" ? residueHover : chainHover;
 
+  // Bond tubes linked hover highlight: respond to hovered chain/residue from atom mesh
+  useBondLinkedHoverHighlight(
+    filteredScene,
+    objects.bonds as unknown as THREE.InstancedMesh | undefined,
+    selection.mode as "atom" | "residue" | "chain",
+    chainHover.hovered,
+    residueHover.hovered,
+    selection.hoverTint as string,
+    Boolean(objects.bonds)
+  );
+
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
     filteredScene,
@@ -140,6 +153,36 @@ export function MoleculeView() {
     bonds: overlays.bonds,
     backbone: overlays.backbone,
   });
+
+  const handleCanvasPointerLeave = useCallback(() => {
+    chainHover.onPointerOut();
+    residueHover.onPointerOut();
+  }, [chainHover, residueHover]);
+
+  const handleScenePointerMove = useCallback((e: ThreeEvent<PointerEvent>) => {
+    if (!objects.atoms) return;
+    const hits = e.intersections || [];
+    const hitAtoms = hits.some((i) => i.object === objects.atoms);
+    if (!hitAtoms) {
+      chainHover.onPointerOut();
+      residueHover.onPointerOut();
+    }
+  }, [objects.atoms, chainHover, residueHover]);
+
+  const handleScenePointerLeave = useCallback(() => {
+    chainHover.onPointerOut();
+    residueHover.onPointerOut();
+  }, [chainHover, residueHover]);
+
+  // Ensure bonds/backbone do not steal pointer events; atoms drive hover state
+  useEffect(() => {
+    if (objects.bonds) {
+      (objects.bonds as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => {};
+    }
+    if (objects.backbone) {
+      (objects.backbone as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => {};
+    }
+  }, [objects.bonds, objects.backbone]);
 
   useEffect(() => {
     document.body.style.background = common.background;
@@ -191,6 +234,7 @@ export function MoleculeView() {
         gl={{ antialias: true }}
         dpr={[1, Math.min(window.devicePixelRatio || 1, 2)]}
         camera={{ position: [0, 0, 100], near: 0.1, far: 5000 }}
+        onPointerLeave={handleCanvasPointerLeave}
       >
         <color attach="background" args={[common.background]} />
         <ambientLight intensity={1.0} />
@@ -207,10 +251,13 @@ export function MoleculeView() {
         <AdaptiveDpr pixelated />
         <Preload all />
         <Suspense fallback={null}>
+          <group onPointerMove={handleScenePointerMove} onPointerLeave={handleScenePointerLeave}>
           {common.representation !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
-              {overlays.bonds && objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
+              {overlays.bonds && objects.bonds && (
+                <primitive key={keys.bonds} object={objects.bonds} />
+              )}
               {overlays.backbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
           )}
@@ -228,6 +275,7 @@ export function MoleculeView() {
               {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
           )}
+          </group>
         </Suspense>
       </Canvas>
       {loading && (

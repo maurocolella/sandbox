@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { MolScene } from "pdb-parser";
@@ -20,6 +20,7 @@ type OnBeforeCompileFn = (shader: unknown, renderer: unknown) => void;
 export interface HoverHandlers {
   onPointerMove: (e: ThreeEvent<PointerEvent>) => void;
   onPointerOut: () => void;
+  hovered: number;
 }
 
 export function useResidueHoverHighlight(
@@ -29,6 +30,7 @@ export function useResidueHoverHighlight(
   enabled: boolean = true
 ): HoverHandlers {
   const hoveredResidueRef = useRef<number>(-1);
+  const [hovered, setHovered] = useState<number>(-1);
   const tintColor = useMemo(() => new THREE.Color(tint), [tint]);
   const uniformsRef = useRef<{ uHoveredResidue: { value: number }; uTint: { value: THREE.Color } } | null>(null);
 
@@ -102,6 +104,7 @@ export function useResidueHoverHighlight(
     if (ri == null) return;
     if (hoveredResidueRef.current !== ri) {
       hoveredResidueRef.current = ri;
+      setHovered(ri);
       if (uniformsRef.current) uniformsRef.current.uHoveredResidue.value = ri;
     }
   };
@@ -110,9 +113,10 @@ export function useResidueHoverHighlight(
     if (!enabled) return;
     if (hoveredResidueRef.current !== -1) {
       hoveredResidueRef.current = -1;
+      setHovered(-1);
       if (uniformsRef.current) uniformsRef.current.uHoveredResidue.value = -1;
     }
   };
 
-  return { onPointerMove, onPointerOut };
+  return { onPointerMove, onPointerOut, hovered };
 }

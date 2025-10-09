@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
-import { makeAtomsMesh, makeBackboneLines, makeBondLines } from "pdb-parser";
+import { makeAtomsMesh, makeBackboneLines, makeBondTubes } from "pdb-parser";
 import type { InstancedMesh as InstancedMeshType, LineSegments, Material } from "three";
 
 export interface SceneBuildOptions {
@@ -11,10 +11,10 @@ export interface SceneBuildOptions {
 
 export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions) {
   const objects = useMemo(() => {
-    if (!scene) return { atoms: undefined as InstancedMeshType | undefined, bonds: undefined as LineSegments | undefined, backbone: undefined as LineSegments | undefined };
+    if (!scene) return { atoms: undefined as InstancedMeshType | undefined, bonds: undefined as InstancedMeshType | LineSegments | undefined, backbone: undefined as LineSegments | undefined };
 
     let atoms: InstancedMeshType | undefined;
-    let bonds: LineSegments | undefined;
+    let bonds: InstancedMeshType | LineSegments | undefined;
     let backbone: LineSegments | undefined;
 
     if (opts.atoms !== false) {
@@ -32,7 +32,7 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
       }
     }
     if (opts.bonds) {
-      bonds = makeBondLines(scene) as LineSegments | undefined;
+      bonds = makeBondTubes(scene) as InstancedMeshType | undefined;
     }
     if (opts.backbone !== false) {
       backbone = makeBackboneLines(scene, { color: opts.backbone?.color ?? 0xffffff }) as LineSegments | undefined;

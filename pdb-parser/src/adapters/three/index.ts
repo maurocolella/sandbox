@@ -3,6 +3,7 @@ export { makeBondLines, type BondLineOptions } from "./bonds.js";
 export { makeBackboneLines, type BackboneLineOptions } from "./backbone.js";
 export { makeRibbonMesh, type RibbonOptions } from "./ribbon.js";
 export { makeFlatRibbonMesh, type FlatRibbonOptions } from "./ribbon.js";
+export { makeBondTubes, type BondTubeOptions } from "./bondTubes.js";
 
 import type { MolScene } from "../../types/molScene.js";
 import type { AtomMeshOptions } from "./atoms.js";
