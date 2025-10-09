@@ -2,64 +2,16 @@ import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "rea
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
-import type { InstancedMesh as InstancedMeshType, LineSegments, Material } from "three";
 import { useMolScene } from "./useMolScene";
-import { makeAtomsMesh, makeBondLines, makeBackboneLines, makeRibbonMesh, makeFlatRibbonMesh, subsetMolSceneByChains } from "pdb-parser";
-import type { ParseOptions, MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
-import { Vector3, Mesh } from "three";
+import { makeRibbonMesh, makeFlatRibbonMesh } from "pdb-parser";
+import type { ParseOptions, MolScene, AtomMeshOptions } from "pdb-parser";
+import { Mesh } from "three";
+import { useChainSelection } from "../lib/hooks/useChainSelection";
+import { useFilteredScene } from "../lib/hooks/useFilteredScene";
+import { useSceneObjects } from "../lib/hooks/useSceneObjects";
+import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 
-type SceneBuildOptions = {
-  atoms: AtomMeshOptions | false;
-  bonds: boolean;
-  backbone: BackboneLineOptions | false;
-};
-
-function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions) {
-  const objects = useMemo(() => {
-    if (!scene) return { atoms: undefined as InstancedMeshType | undefined, bonds: undefined as LineSegments | undefined, backbone: undefined as LineSegments | undefined };
-
-    let atoms: InstancedMeshType | undefined;
-    let bonds: LineSegments | undefined;
-    let backbone: LineSegments | undefined;
-
-    if (opts.atoms !== false) {
-      atoms = makeAtomsMesh(scene, {
-        sphereDetail: opts.atoms?.sphereDetail ?? 16,
-        materialKind: (opts.atoms?.materialKind ?? "standard") as AtomMeshOptions["materialKind"],
-        radiusScale: opts.atoms?.radiusScale ?? 1.0,
-      });
-      // Force uniform white material (disable vertex colors), mirroring the earlier fuchsia override but with white.
-      if (atoms) {
-        const mat = atoms.material as unknown as { vertexColors?: boolean; color?: { set: (v: string) => void }; needsUpdate?: boolean };
-        if (typeof mat.vertexColors !== "undefined") mat.vertexColors = false;
-        if (mat.color) mat.color.set("#ffffff");
-        if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
-      }
-    }
-    if (opts.bonds) {
-      bonds = makeBondLines(scene) as LineSegments | undefined;
-    }
-    if (opts.backbone !== false) {
-      backbone = makeBackboneLines(scene, { color: opts.backbone?.color ?? 0xffffff }) as LineSegments | undefined;
-    }
-
-    return { atoms, bonds, backbone };
-  }, [scene, opts.atoms, opts.bonds, opts.backbone]);
-
-  // dispose on change/unmount
-  useEffect(() => {
-    return () => {
-      objects.atoms?.geometry.dispose();
-      (objects.atoms?.material as Material | undefined)?.dispose?.();
-      objects.bonds?.geometry.dispose();
-      (objects.bonds?.material as Material | undefined)?.dispose?.();
-      objects.backbone?.geometry.dispose();
-      (objects.backbone?.material as Material | undefined)?.dispose?.();
-    };
-  }, [objects.atoms, objects.bonds, objects.backbone]);
-
-  return objects;
-}
+// Scene objects hook imported from ../lib/hooks/useSceneObjects
 
 export function MoleculeView() {
   // Controls: parsing + rendering
@@ -113,51 +65,29 @@ export function MoleculeView() {
 
   const { scene, error, loading } = useMolScene(sourceUrl, parseOpts as ParseOptions);
 
-  // Chain selection state: map chain index -> boolean (selected)
-  const [chainSelected, setChainSelected] = useState<Record<number, boolean>>({});
+  // Chain selection domain hook
+  const { chainSelected, setChainSelected, selectedChainIndices } = useChainSelection(scene as MolScene | null);
 
   const handleChainCheckbox = useCallback((idx: number, checked: boolean) => {
-    setChainSelected((prev) => ({ ...prev, [idx]: checked }));
-  }, []);
+    setChainSelected({ ...chainSelected, [idx]: checked });
+  }, [chainSelected, setChainSelected]);
 
   const handleAllChains = useCallback(() => {
     if (!scene?.tables?.chains) return;
     const next: Record<number, boolean> = {};
     for (let i = 0; i < scene.tables.chains.length; i++) next[i] = true;
     setChainSelected(next);
-  }, [scene]);
+  }, [scene, setChainSelected]);
 
   const handleNoChains = useCallback(() => {
     if (!scene?.tables?.chains) return;
     const next: Record<number, boolean> = {};
     for (let i = 0; i < scene.tables.chains.length; i++) next[i] = false;
     setChainSelected(next);
-  }, [scene]);
+  }, [scene, setChainSelected]);
 
-  // Initialize chain toggles when a new scene is loaded
-  useEffect(() => {
-    if (!scene?.tables?.chains) {
-      setChainSelected({});
-      return;
-    }
-    const next: Record<number, boolean> = {};
-    for (let i = 0; i < scene.tables.chains.length; i++) next[i] = true;
-    setChainSelected(next);
-  }, [scene]);
-
-  // Compute filtered scene when some chains are toggled off
-  const filteredScene = useMemo<MolScene | null>(() => {
-    if (!scene) return null;
-    const chains = scene.tables?.chains ?? [];
-    if (chains.length === 0) return scene;
-    const include: number[] = [];
-    for (let i = 0; i < chains.length; i++) {
-      if (chainSelected[i] !== false) include.push(i);
-    }
-    // If all chains are included (or none explicitly excluded), use the original scene to avoid copies
-    if (include.length === chains.length) return scene;
-    return subsetMolSceneByChains(scene, include);
-  }, [scene, chainSelected]);
+  // Filtered scene domain hook
+  const { filtered: filteredScene, selectionKey } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
   const objects = useSceneObjects(filteredScene, {
     atoms: overlays.atoms && common.representation === "spheres"
       ? { sphereDetail: spheres.sphereDetail, materialKind: common.materialKind as AtomMeshOptions["materialKind"], radiusScale: spheres.radiusScale }
@@ -211,71 +141,9 @@ export function MoleculeView() {
     document.body.style.background = common.background;
   }, [common.background]);
 
-  // OrbitControls ref (minimal shape we need)
-  type ControlsRef = {
-    target: Vector3;
-    object: { position: Vector3; fov?: number; updateProjectionMatrix?: () => void };
-    update: () => void;
-  };
   const controlsRef = useRef<ControlsRef | null>(null);
-
-  // On new scene load: center and frame the model (compute distance from bbox/atoms)
-  const lastSceneRef = useRef<MolScene | null>(null);
-  useEffect(() => {
-    if (!filteredScene || loading) return;
-    if (lastSceneRef.current === scene) return;
-    if (!controlsRef.current) {
-      lastSceneRef.current = scene;
-      return;
-    }
-    // Compute center/size from bbox if present, else from atom positions
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    if (filteredScene.bbox) {
-      [minX, minY, minZ] = filteredScene.bbox.min;
-      [maxX, maxY, maxZ] = filteredScene.bbox.max;
-    } else {
-      const a = filteredScene.atoms;
-      if (a && a.count > 0) {
-        const p = a.positions;
-        for (let i = 0; i < a.count; i++) {
-          const x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2];
-          if (x < minX) minX = x; if (y < minY) minY = y; if (z < minZ) minZ = z;
-          if (x > maxX) maxX = x; if (y > maxY) maxY = y; if (z > maxZ) maxZ = z;
-        }
-      }
-    }
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
-      lastSceneRef.current = scene;
-      return;
-    }
-    const c = new Vector3((minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5);
-    const sizeX = Math.max(1e-6, maxX - minX);
-    const sizeY = Math.max(1e-6, maxY - minY);
-    // Frame using camera FOV and viewport aspect
-    const ctrl = controlsRef.current;
-    const cam = ctrl.object;
-    const vFov = (cam.fov ?? 60) * Math.PI / 180;
-    const aspect = (typeof window !== "undefined" && window.innerHeight > 0)
-      ? (window.innerWidth / window.innerHeight)
-      : 1.6;
-    const halfW = sizeX * 0.5;
-    const halfH = sizeY * 0.5;
-    const distY = halfH / Math.tan(vFov / 2);
-    const distX = halfW / (Math.tan(vFov / 2) * aspect);
-    const margin = 1.6; // gentle padding
-    const desiredDist = Math.max(distX, distY) * margin;
-
-    ctrl.target.copy(c);
-    const dir = cam.position.clone().sub(ctrl.target).normalize();
-    if (!Number.isFinite(dir.x) || !Number.isFinite(dir.y) || !Number.isFinite(dir.z) || dir.lengthSq() < 1e-6) {
-      dir.set(0, 0, 1);
-    }
-    cam.position.copy(c.clone().add(dir.multiplyScalar(desiredDist)));
-    cam.updateProjectionMatrix?.();
-    ctrl.update();
-    lastSceneRef.current = scene;
-  }, [filteredScene, scene, loading]);
+  // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
+  useCameraFrameOnScene(scene as MolScene | null, controlsRef.current, loading);
 
   return (
     <div style={{ display: 'flex', height: '100%', flex: 1 }}>
@@ -337,16 +205,16 @@ export function MoleculeView() {
         <Suspense fallback={null}>
           {common.representation !== "spheres" && ribbonGroup && (
             <>
-              <primitive object={ribbonGroup} />
-              {overlays.bonds && objects.bonds && <primitive object={objects.bonds} />}
-              {overlays.backbone && objects.backbone && <primitive object={objects.backbone} />}
+              <primitive key={`sel:${selectionKey}|rep:${common.representation}-ribbon`} object={ribbonGroup} />
+              {overlays.bonds && objects.bonds && <primitive key={`sel:${selectionKey}|rep:${common.representation}-bonds`} object={objects.bonds} />}
+              {overlays.backbone && objects.backbone && <primitive key={`sel:${selectionKey}|rep:${common.representation}-backbone`} object={objects.backbone} />}
             </>
           )}
           {common.representation === "spheres" && (
             <>
-              {objects.atoms && <primitive object={objects.atoms} />}
-              {objects.bonds && <primitive object={objects.bonds} />}
-              {objects.backbone && <primitive object={objects.backbone} />}
+              {objects.atoms && <primitive key={`sel:${selectionKey}|rep:${common.representation}-atoms`} object={objects.atoms} />}
+              {objects.bonds && <primitive key={`sel:${selectionKey}|rep:${common.representation}-bonds`} object={objects.bonds} />}
+              {objects.backbone && <primitive key={`sel:${selectionKey}|rep:${common.representation}-backbone`} object={objects.backbone} />}
             </>
           )}
         </Suspense>
