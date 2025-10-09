@@ -164,7 +164,7 @@ export function MoleculeView() {
   useEffect(() => {
     document.body.style.background = common.background;
   }, [common.background]);
-  
+
   // OrbitControls ref (minimal shape we need)
   type ControlsRef = {
     target: Vector3;
