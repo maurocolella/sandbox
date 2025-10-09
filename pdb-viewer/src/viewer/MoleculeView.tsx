@@ -1,10 +1,10 @@
-import { Suspense, useEffect, useMemo, useState, useRef } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
 import type { InstancedMesh as InstancedMeshType, LineSegments, Material } from "three";
 import { useMolScene } from "./useMolScene";
-import { makeAtomsMesh, makeBondLines, makeBackboneLines, makeRibbonMesh, makeFlatRibbonMesh } from "pdb-parser";
+import { makeAtomsMesh, makeBondLines, makeBackboneLines, makeRibbonMesh, makeFlatRibbonMesh, subsetMolSceneByChains } from "pdb-parser";
 import type { ParseOptions, MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
 import { Vector3, Mesh } from "three";
 
@@ -112,7 +112,53 @@ export function MoleculeView() {
   });
 
   const { scene, error, loading } = useMolScene(sourceUrl, parseOpts as ParseOptions);
-  const objects = useSceneObjects(scene, {
+
+  // Chain selection state: map chain index -> boolean (selected)
+  const [chainSelected, setChainSelected] = useState<Record<number, boolean>>({});
+
+  const handleChainCheckbox = useCallback((idx: number, checked: boolean) => {
+    setChainSelected((prev) => ({ ...prev, [idx]: checked }));
+  }, []);
+
+  const handleAllChains = useCallback(() => {
+    if (!scene?.tables?.chains) return;
+    const next: Record<number, boolean> = {};
+    for (let i = 0; i < scene.tables.chains.length; i++) next[i] = true;
+    setChainSelected(next);
+  }, [scene]);
+
+  const handleNoChains = useCallback(() => {
+    if (!scene?.tables?.chains) return;
+    const next: Record<number, boolean> = {};
+    for (let i = 0; i < scene.tables.chains.length; i++) next[i] = false;
+    setChainSelected(next);
+  }, [scene]);
+
+  // Initialize chain toggles when a new scene is loaded
+  useEffect(() => {
+    if (!scene?.tables?.chains) {
+      setChainSelected({});
+      return;
+    }
+    const next: Record<number, boolean> = {};
+    for (let i = 0; i < scene.tables.chains.length; i++) next[i] = true;
+    setChainSelected(next);
+  }, [scene]);
+
+  // Compute filtered scene when some chains are toggled off
+  const filteredScene = useMemo<MolScene | null>(() => {
+    if (!scene) return null;
+    const chains = scene.tables?.chains ?? [];
+    if (chains.length === 0) return scene;
+    const include: number[] = [];
+    for (let i = 0; i < chains.length; i++) {
+      if (chainSelected[i] !== false) include.push(i);
+    }
+    // If all chains are included (or none explicitly excluded), use the original scene to avoid copies
+    if (include.length === chains.length) return scene;
+    return subsetMolSceneByChains(scene, include);
+  }, [scene, chainSelected]);
+  const objects = useSceneObjects(filteredScene, {
     atoms: overlays.atoms && common.representation === "spheres"
       ? { sphereDetail: spheres.sphereDetail, materialKind: common.materialKind as AtomMeshOptions["materialKind"], radiusScale: spheres.radiusScale }
       : false,
@@ -122,9 +168,9 @@ export function MoleculeView() {
 
   // Build ribbon group only when selected
   const ribbonGroup = useMemo(() => {
-    if (!scene) return null;
+    if (!filteredScene) return null;
     if (common.representation === "ribbon-tube") {
-      return makeRibbonMesh(scene, {
+      return makeRibbonMesh(filteredScene, {
         radius: 0.4,
         radialSegments: 12,
         tubularSegmentsPerPoint: 6,
@@ -133,7 +179,7 @@ export function MoleculeView() {
       });
     }
     if (common.representation === "ribbon-flat") {
-      return makeFlatRibbonMesh(scene, {
+      return makeFlatRibbonMesh(filteredScene, {
         width: 1.2,
         segmentsPerPoint: 6,
         materialKind: common.materialKind as AtomMeshOptions["materialKind"],
@@ -143,7 +189,7 @@ export function MoleculeView() {
       });
     }
     return null;
-  }, [scene, common.representation, common.materialKind, ribbon.thickness]);
+  }, [filteredScene, common.representation, common.materialKind, ribbon.thickness]);
 
   // Dispose ribbon on change/unmount
   useEffect(() => {
@@ -176,7 +222,7 @@ export function MoleculeView() {
   // On new scene load: center and frame the model (compute distance from bbox/atoms)
   const lastSceneRef = useRef<MolScene | null>(null);
   useEffect(() => {
-    if (!scene || loading) return;
+    if (!filteredScene || loading) return;
     if (lastSceneRef.current === scene) return;
     if (!controlsRef.current) {
       lastSceneRef.current = scene;
@@ -185,11 +231,11 @@ export function MoleculeView() {
     // Compute center/size from bbox if present, else from atom positions
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    if (scene.bbox) {
-      [minX, minY, minZ] = scene.bbox.min;
-      [maxX, maxY, maxZ] = scene.bbox.max;
+    if (filteredScene.bbox) {
+      [minX, minY, minZ] = filteredScene.bbox.min;
+      [maxX, maxY, maxZ] = filteredScene.bbox.max;
     } else {
-      const a = scene.atoms;
+      const a = filteredScene.atoms;
       if (a && a.count > 0) {
         const p = a.positions;
         for (let i = 0; i < a.count; i++) {
@@ -229,7 +275,7 @@ export function MoleculeView() {
     cam.updateProjectionMatrix?.();
     ctrl.update();
     lastSceneRef.current = scene;
-  }, [scene, loading]);
+  }, [filteredScene, scene, loading]);
 
   return (
     <div style={{ display: 'flex', height: '100%', flex: 1 }}>
@@ -243,6 +289,32 @@ export function MoleculeView() {
           style={{ width: 320, padding: 10, background: "#222", color: "#eee", border: "1px solid #444", borderRadius: 4 }}
         />
       </div>
+      {/* Chain selector panel */}
+      {scene?.tables?.chains && scene.tables.chains.length > 0 && (
+        <div style={{ position: "absolute", top: 52, left: 10, zIndex: 1, background: "#1b1b1b", border: "1px solid #333", borderRadius: 6, padding: 10, color: "#ddd", fontFamily: "system-ui, sans-serif", fontSize: 12, maxHeight: 240, overflowY: "auto", minWidth: 160 }}>
+          <div style={{ marginBottom: 6, fontWeight: 600 }}>Chains</div>
+          {scene.tables.chains.map((c, idx) => (
+            <label key={idx} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <input
+                type="checkbox"
+                checked={chainSelected[idx] !== false}
+                onChange={(e) => handleChainCheckbox(idx, e.target.checked)}
+              />
+              <span>{c.id || "(blank)"}</span>
+            </label>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button
+              onClick={handleAllChains}
+              style={{ background: "#2a2a2a", color: "#eee", border: "1px solid #444", borderRadius: 4, padding: "4px 8px" }}
+            >All</button>
+            <button
+              onClick={handleNoChains}
+              style={{ background: "#2a2a2a", color: "#eee", border: "1px solid #444", borderRadius: 4, padding: "4px 8px" }}
+            >None</button>
+          </div>
+        </div>
+      )}
       <Canvas
         gl={{ antialias: true }}
         dpr={[1, Math.min(window.devicePixelRatio || 1, 2)]}

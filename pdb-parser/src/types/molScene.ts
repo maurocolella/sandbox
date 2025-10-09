@@ -23,9 +23,25 @@ export interface MolScene {
   };
   tables?: {
     chains?: { id: string }[];
-    residues?: { name: string; seq: number; iCode?: string }[];
+    residues?: { name: string; seq: number; iCode?: string; chain?: number }[];
     chainSegments?: { chain: number; startResidue: number; endResidue: number }[];
     secondary?: { kind: "helix" | "sheet"; chain: number; startResidue: number; endResidue: number }[];
+  };
+  /** Fast lookup indices for chains, residues, and atoms. */
+  index?: {
+    /** CSR-like layout: per-chain list of residue indices. */
+    chainResidueOffsets: Uint32Array; // length = chains + 1
+    chainResidueIndex: Uint32Array;   // length = residues
+    /** CSR-like layout: per-residue list of atom indices. */
+    residueAtomOffsets: Uint32Array;  // length = residues + 1
+    residueAtomIndex: Uint32Array;    // length = atoms
+    /** CSR-like layout: per-chain list of atom indices. */
+    chainAtomOffsets: Uint32Array;    // length = chains + 1
+    chainAtomIndex: Uint32Array;      // length = atoms
+    /** String id -> chain index */
+    chainIdToIndex: Record<string, number>;
+    /** "chainID|seq|iCode|resName" -> residue index */
+    residueKeyToIndex: Record<string, number>;
   };
   bbox?: { min: [number, number, number]; max: [number, number, number] };
   metadata?: {
@@ -34,3 +50,4 @@ export interface MolScene {
     warnings?: string[];
   };
 }
+

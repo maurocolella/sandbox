@@ -1,6 +1,7 @@
 import type { MolScene } from "../types/molScene.js";
 import { WarningCollector } from "../utils/warnings.js";
 import { elementCodeFromSymbol, elementColorRGB, inferElementSymbol, vdwRadius, covalentRadius } from "../utils/elements.js";
+import { buildSceneIndex } from "../utils/buildIndex.js";
 
 interface AtomRecord {
   serial: number;
@@ -306,7 +307,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
   const chainIdToIndex = new Map<string, number>();
   const chains: { id: string }[] = [];
   const residueKeyToIndex = new Map<string, number>();
-  const residues: { name: string; seq: number; iCode?: string }[] = [];
+  const residues: NonNullable<NonNullable<MolScene["tables"]>["residues"]> = [];
 
   // Chain segmentation via TER records (per chain index)
   const chainSegments: { chain: number; startResidue: number; endResidue: number }[] = [];
@@ -525,6 +526,12 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
     if (out.length) secondary = out;
   }
 
+  // Attach chain index to residue table entries
+  for (let ri = 0; ri < residues.length; ri++) {
+    const ci = residueToChainIndex[ri]!;
+    if (ci != null && ci >= 0) residues[ri]!.chain = ci;
+  }
+
   const scene: MolScene = {
     atoms: { count, positions, radii, colors, element: elementCodes, chainIndex, residueIndex, serial, names },
     bonds,
@@ -537,6 +544,13 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
     bbox: count > 0 ? { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } : undefined,
     metadata: { warnings: W.toArray(), modelCount: Math.max(1, modelCount) }
   };
+
+  // Build fast lookup indices
+  try {
+    scene.index = buildSceneIndex(scene);
+  } catch {
+    // leave index undefined if anything goes wrong
+  }
 
   return scene;
 }
