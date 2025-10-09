@@ -27,7 +27,8 @@ export function useResidueHoverHighlight(
   scene: MolScene | null,
   atoms: THREE.InstancedMesh | undefined,
   tint: THREE.ColorRepresentation = 0xff00ff,
-  enabled: boolean = true
+  enabled: boolean = true,
+  eventsEnabled: boolean = true
 ): HoverHandlers {
   const hoveredResidueRef = useRef<number>(-1);
   const [hovered, setHovered] = useState<number>(-1);
@@ -95,8 +96,17 @@ export function useResidueHoverHighlight(
     mat.needsUpdate = true;
   }, [scene, atoms, tintColor, enabled]);
 
+  // If disabled, ensure hover state is cleared
+  useEffect(() => {
+    if (!enabled) {
+      hoveredResidueRef.current = -1;
+      setHovered(-1);
+      if (uniformsRef.current) uniformsRef.current.uHoveredResidue.value = -1;
+    }
+  }, [enabled]);
+
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
-    if (!enabled) return;
+    if (!eventsEnabled) return;
     if (!scene || !atoms) return;
     const id = e.instanceId;
     if (id == null) return;
@@ -110,7 +120,7 @@ export function useResidueHoverHighlight(
   };
 
   const onPointerOut = () => {
-    if (!enabled) return;
+    if (!eventsEnabled) return;
     if (hoveredResidueRef.current !== -1) {
       hoveredResidueRef.current = -1;
       setHovered(-1);

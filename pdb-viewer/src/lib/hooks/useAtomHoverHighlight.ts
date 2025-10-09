@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { MolScene } from "pdb-parser";
@@ -20,15 +20,18 @@ type OnBeforeCompileFn = (shader: unknown, renderer: unknown) => void;
 export interface HoverHandlers {
   onPointerMove: (e: ThreeEvent<PointerEvent>) => void;
   onPointerOut: () => void;
+  hovered?: number;
 }
 
 export function useAtomHoverHighlight(
   scene: MolScene | null,
   atoms: THREE.InstancedMesh | undefined,
   tint: THREE.ColorRepresentation = 0xff00ff,
-  enabled: boolean = true
+  enabled: boolean = true,
+  eventsEnabled: boolean = true
 ): HoverHandlers {
   const hoveredAtomRef = useRef<number>(-1);
+  const [hovered, setHovered] = useState<number>(-1);
   const tintColor = useMemo(() => new THREE.Color(tint), [tint]);
   const uniformsRef = useRef<{ uHoveredAtom: { value: number }; uTint: { value: THREE.Color } } | null>(null);
 
@@ -97,24 +100,35 @@ export function useAtomHoverHighlight(
     };
   }, [scene, atoms, tintColor, enabled]);
 
+  // If disabled, ensure hover state is cleared
+  useEffect(() => {
+    if (!enabled) {
+      hoveredAtomRef.current = -1;
+      setHovered(-1);
+      if (uniformsRef.current) uniformsRef.current.uHoveredAtom.value = -1;
+    }
+  }, [enabled]);
+
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
-    if (!enabled) return;
+    if (!eventsEnabled) return;
     if (!scene || !atoms) return;
     const id = e.instanceId;
     if (id == null) return;
     if (hoveredAtomRef.current !== id) {
       hoveredAtomRef.current = id;
+      setHovered(id);
       if (uniformsRef.current) uniformsRef.current.uHoveredAtom.value = id;
     }
   };
 
   const onPointerOut = () => {
-    if (!enabled) return;
+    if (!eventsEnabled) return;
     if (hoveredAtomRef.current !== -1) {
       hoveredAtomRef.current = -1;
+      setHovered(-1);
       if (uniformsRef.current) uniformsRef.current.uHoveredAtom.value = -1;
     }
   };
 
-  return { onPointerMove, onPointerOut };
+  return { onPointerMove, onPointerOut, hovered };
 }

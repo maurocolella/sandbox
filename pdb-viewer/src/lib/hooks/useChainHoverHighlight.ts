@@ -27,7 +27,8 @@ export function useChainHoverHighlight(
   scene: MolScene | null,
   atoms: THREE.InstancedMesh | undefined,
   tint: THREE.ColorRepresentation = 0xff00ff,
-  enabled: boolean = true
+  enabled: boolean = true,
+  eventsEnabled: boolean = true
 ): ChainHoverHandlers {
   const hoveredChainRef = useRef<number>(-1);
   const [hovered, setHovered] = useState<number>(-1);
@@ -122,7 +123,7 @@ export function useChainHoverHighlight(
 
   // Handlers
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
-    if (!enabled) return;
+    if (!eventsEnabled) return;
     if (!scene || !atoms) return;
     const id = e.instanceId;
     if (id == null) return;
@@ -136,7 +137,7 @@ export function useChainHoverHighlight(
   };
 
   const onPointerOut = () => {
-    if (!enabled) return;
+    if (!eventsEnabled) return;
     if (hoveredChainRef.current !== -1) {
       hoveredChainRef.current = -1;
       setHovered(-1);

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState, useRef, useCallback } from "react";
+import { Suspense, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
@@ -15,6 +15,8 @@ import { useChainHoverHighlight } from "../lib/hooks/useChainHoverHighlight";
 import { useAtomHoverHighlight } from "../lib/hooks/useAtomHoverHighlight";
 import { useResidueHoverHighlight } from "../lib/hooks/useResidueHoverHighlight";
 import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
+import { useOutlineOverlays } from "../lib/hooks/useOutlineOverlays";
+import { OutlineComposer } from "./OutlineComposer";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 
 export function MoleculeView() {
@@ -70,7 +72,8 @@ export function MoleculeView() {
   // Selection toolbox: atom/residue/chain + hover tint
   const selection = useControls("Selection", {
     mode: { value: "chain", options: ["atom", "residue", "chain"] as const },
-    hoverTint: { value: "#ff00ff" },
+    hoverTint: { value: "#ffffff" },
+    outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
   });
 
   const { scene, error, loading } = useMolScene(sourceUrl, parseOpts as ParseOptions);
@@ -112,19 +115,21 @@ export function MoleculeView() {
     filteredScene,
     objects.atoms,
     selection.hoverTint as string,
-    isSpheres && selection.mode === "atom"
+    false
   );
   const residueHover = useResidueHoverHighlight(
     filteredScene,
     objects.atoms,
     selection.hoverTint as string,
-    isSpheres && selection.mode === "residue"
+    false,
+    true
   );
   const chainHover = useChainHoverHighlight(
     filteredScene,
     objects.atoms,
     selection.hoverTint as string,
-    isSpheres && selection.mode === "chain"
+    false,
+    true
   );
   const hover = selection.mode === "atom" ? atomHover : selection.mode === "residue" ? residueHover : chainHover;
 
@@ -136,8 +141,25 @@ export function MoleculeView() {
     chainHover.hovered,
     residueHover.hovered,
     selection.hoverTint as string,
-    Boolean(objects.bonds)
+    false
   );
+
+  // Outline overlays: build instanced meshes with only hovered subset
+  const { atomOverlay, bondOverlay } = useOutlineOverlays(filteredScene, {
+    mode: selection.mode as "atom" | "residue" | "chain",
+    hoveredChain: chainHover.hovered,
+    hoveredResidue: residueHover.hovered,
+    hoveredAtom: atomHover.hovered,
+    radiusScale: spheres.radiusScale,
+    sphereDetail: spheres.sphereDetail,
+  });
+  const outlineSelected = useMemo<THREE.Object3D[]>(() => {
+    if (!isSpheres) return [];
+    const out: THREE.Object3D[] = [];
+    if (atomOverlay) out.push(atomOverlay);
+    if (bondOverlay) out.push(bondOverlay);
+    return out;
+  }, [isSpheres, atomOverlay, bondOverlay]);
 
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
@@ -273,10 +295,21 @@ export function MoleculeView() {
               )}
               {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
               {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+              {isSpheres && atomOverlay && (
+                <primitive key="outline-atom-overlay" object={atomOverlay} />
+              )}
+              {isSpheres && bondOverlay && (
+                <primitive key="outline-bond-overlay" object={bondOverlay} />
+              )}
             </>
           )}
           </group>
         </Suspense>
+        <OutlineComposer
+          enabled={isSpheres}
+          selected={outlineSelected}
+          params={{ visibleEdgeColor: "#ffffff", edgeStrength: 6.0, edgeThickness: selection.outlineWidth }}
+        />
       </Canvas>
       {loading && (
         <div style={{ position: "absolute", left: 12, bottom: 12, color: "#ccc", fontFamily: "monospace", fontSize: 12 }}>
