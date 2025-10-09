@@ -22,41 +22,41 @@ export function MoleculeView() {
   // Controls: parsing + rendering
   const [sourceUrl, setSourceUrl] = useState<string>("/models/1IGY.pdb");
 
-  const parseOpts = useControls("Parse", {
+  const parseOpts = useControls("Parsing", {
     altLocPolicy: { value: "occupancy", options: ["occupancy", "all"] as ParseOptions["altLocPolicy"][] },
     modelSelection: { value: 1, min: 1, step: 1 },
     bondPolicy: { value: "conect+heuristic", options: ["conect-only", "heuristic-if-missing", "conect+heuristic"] as ParseOptions["bondPolicy"][] },
-  });
+  }, { collapsed: true });
 
-  // Common controls
-  const common = useControls("Common", {
+  // Display: representation + overlay toggles
+  const display = useControls("Display", {
     representation: { value: "spheres", options: ["spheres", "ribbon-tube", "ribbon-flat"] as const },
-    materialKind: { value: "standard", options: ["basic", "lambert", "standard"] as const },
-    background: { value: "#111111" },
-  });
-
-  // Overlays (apply across modes)
-  const overlays = useControls("Overlays", {
     atoms: {
       value: true,
-      render: (get) => get("Common.representation") === "spheres",
+      render: (get) => get("Display.representation") === "spheres",
     },
     bonds: true,
     backbone: {
       value: true,
-      render: (get) => get("Common.representation") === "spheres",
+      render: (get) => get("Display.representation") === "spheres",
     },
   });
+
+  // Styling: material + background
+  const style = useControls("Styling", {
+    materialKind: { value: "standard", options: ["basic", "lambert", "standard"] as const },
+    background: { value: "#111111" },
+  }, { collapsed: true });
 
   // Spheres-only controls
   const spheres = useControls("Spheres", {
     sphereDetail: {
       value: 16, min: 4, max: 32, step: 2,
-      render: (get) => get("Common.representation") === "spheres",
+      render: (get) => get("Display.representation") === "spheres",
     },
     radiusScale: {
       value: 0.3, min: 0.05, max: 2.0, step: 0.05,
-      render: (get) => get("Common.representation") === "spheres",
+      render: (get) => get("Display.representation") === "spheres",
     },
   });
 
@@ -64,7 +64,7 @@ export function MoleculeView() {
   const ribbon = useControls("Ribbon", {
     thickness: {
       value: 0.18, min: 0.02, max: 0.6, step: 0.01,
-      render: (get) => get("Common.representation") === "ribbon-flat",
+      render: (get) => get("Display.representation") === "ribbon-flat",
     },
   });
 
@@ -72,7 +72,7 @@ export function MoleculeView() {
   const selection = useControls("Selection", {
     mode: { value: "chain", options: ["atom", "residue", "chain"] as const },
     hoverTint: { value: "#ff00ff" },
-    outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
+    // outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
     onTopHighlight: { value: true },
   });
 
@@ -102,15 +102,15 @@ export function MoleculeView() {
   // Filtered scene domain hook
   const { filtered: filteredScene, selectionKey } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
   const objects = useSceneObjects(filteredScene, {
-    atoms: overlays.atoms && common.representation === "spheres"
-      ? { sphereDetail: spheres.sphereDetail, materialKind: common.materialKind as AtomMeshOptions["materialKind"], radiusScale: spheres.radiusScale }
+    atoms: display.atoms && display.representation === "spheres"
+      ? { sphereDetail: spheres.sphereDetail, materialKind: style.materialKind as AtomMeshOptions["materialKind"], radiusScale: spheres.radiusScale }
       : false,
-    bonds: overlays.bonds,
-    backbone: overlays.backbone && common.representation === "spheres" ? {} : false,
+    bonds: display.bonds,
+    backbone: display.backbone && display.representation === "spheres" ? {} : false,
   });
 
   // Hover highlight hooks for different selection granularity (only one enabled at a time)
-  const isSpheres = common.representation === "spheres";
+  const isSpheres = display.representation === "spheres";
   const atomHover = useAtomHoverHighlight(
     filteredScene,
     objects.atoms,
@@ -159,16 +159,16 @@ export function MoleculeView() {
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
     filteredScene,
-    common.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
-    common.materialKind as AtomMeshOptions["materialKind"],
+    display.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
+    style.materialKind as AtomMeshOptions["materialKind"],
     { thickness: ribbon.thickness }
   );
 
   // Render keys (derived from selection + overlays + representation)
-  const keys = useRenderKeys(selectionKey, common.representation as Representation, {
-    atoms: overlays.atoms,
-    bonds: overlays.bonds,
-    backbone: overlays.backbone,
+  const keys = useRenderKeys(selectionKey, display.representation as Representation, {
+    atoms: display.atoms,
+    bonds: display.bonds,
+    backbone: display.backbone,
   });
 
   const handleCanvasPointerLeave = useCallback(() => {
@@ -202,8 +202,8 @@ export function MoleculeView() {
   }, [objects.bonds, objects.backbone]);
 
   useEffect(() => {
-    document.body.style.background = common.background;
-  }, [common.background]);
+    document.body.style.background = style.background;
+  }, [style.background]);
 
   const controlsRef = useRef<ControlsRef | null>(null);
   // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
@@ -253,7 +253,7 @@ export function MoleculeView() {
         camera={{ position: [0, 0, 100], near: 0.1, far: 5000 }}
         onPointerLeave={handleCanvasPointerLeave}
       >
-        <color attach="background" args={[common.background]} />
+        <color attach="background" args={[style.background]} />
         <ambientLight intensity={1.0} />
         <directionalLight position={[5, 10, 5]} intensity={1.0} />
         <OrbitControls
@@ -269,16 +269,16 @@ export function MoleculeView() {
         <Preload all />
         <Suspense fallback={null}>
           <group onPointerMove={handleScenePointerMove} onPointerLeave={handleScenePointerLeave}>
-            {common.representation !== "spheres" && ribbonGroup && (
+            {display.representation !== "spheres" && ribbonGroup && (
               <>
                 <primitive key={keys.ribbon} object={ribbonGroup} />
-                {overlays.bonds && objects.bonds && (
+                {display.bonds && objects.bonds && (
                   <primitive key={keys.bonds} object={objects.bonds} />
                 )}
-                {overlays.backbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+                {display.backbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
               </>
             )}
-            {common.representation === "spheres" && (
+            {display.representation === "spheres" && (
               <>
                 {objects.atoms && (
                   <primitive
