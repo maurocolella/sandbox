@@ -1,6 +1,7 @@
 ### Monorepo roots to exclude
 tm-align.rs/
 whitepapers/
+fixtures/pdb/
 
 ### Rust
 target/

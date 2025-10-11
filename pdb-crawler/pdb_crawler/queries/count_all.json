@@ -1,0 +1,16 @@
+{
+  "query": {
+    "type": "terminal",
+    "service": "full_text",
+    "parameters": {
+      "value": "*"
+    }
+  },
+  "return_type": "entry",
+  "request_options": {
+    "paginate": {
+      "start": 0,
+      "rows": 1
+    }
+  }
+}
