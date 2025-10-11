@@ -86,7 +86,7 @@ export function useHoverHighlight(
       } else if (s.fragmentShader.includes("#include <dithering_fragment>")) {
         s.fragmentShader = s.fragmentShader.replace(
           "#include <dithering_fragment>",
-          `vec3 mixedColor = outgoingLight;\nif (abs(vIndex - uHoveredIndex) < 0.5) { mixedColor = mix(outgoingLight, uTint, 0.6); }\ngl_FragColor = vec4( mixedColor, diffuseColor.a );\n#include <dithering_fragment>`
+          `if (abs(vIndex - uHoveredIndex) < 0.5) { gl_FragColor.rgb = mix(gl_FragColor.rgb, uTint, 0.6); }\n#include <dithering_fragment>`
         );
       }
 

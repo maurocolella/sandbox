@@ -75,7 +75,7 @@ export function MoleculeView() {
 
   // Selection toolbox: atom/residue/chain + hover tint
   const selection = useControls("Selection", {
-    mode: { value: "chain", options: ["atom", "residue", "chain"] as const },
+    mode: { value: "residue", options: ["none", "atom", "residue", "chain"] as const },
     hoverTint: { value: "#ff00ff" },
     // outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
     onTopHighlight: { value: true },
@@ -122,12 +122,13 @@ export function MoleculeView() {
 
   // Hover highlight hooks for different selection granularity (only one enabled at a time)
   const isSpheres = display.representation === "spheres";
+  const effectiveMode = (selection.mode === "none" ? "atom" : selection.mode) as "atom" | "residue" | "chain";
   const hover = useHoverHighlight(
     filteredScene,
     objects.atoms,
-    selection.mode as "atom" | "residue" | "chain",
+    effectiveMode,
     selection.hoverTint as string,
-    isSpheres,
+    isSpheres && selection.mode !== "none",
     true
   );
 
@@ -135,16 +136,16 @@ export function MoleculeView() {
   useBondLinkedHoverHighlight(
     filteredScene,
     objects.bonds as unknown as THREE.InstancedMesh | undefined,
-    selection.mode as "atom" | "residue" | "chain",
+    effectiveMode,
     selection.mode === "chain" ? hover.hovered : -1,
     selection.mode === "residue" ? hover.hovered : -1,
     selection.hoverTint as string,
-    Boolean(objects.bonds)
+    Boolean(objects.bonds) && selection.mode !== "none"
   );
 
   // Always-on-top hover overlays (depthTest=false) drawn last
   const { atomOverlay: hoverAtomOverlay, bondOverlay: hoverBondOverlay } = useHoverOverlays(filteredScene, {
-    mode: selection.mode as "atom" | "residue" | "chain",
+    mode: effectiveMode,
     hoveredAtom: selection.mode === "atom" ? (hover.hovered ?? -1) : -1,
     hoveredResidue: selection.mode === "residue" ? hover.hovered : -1,
     hoveredChain: selection.mode === "chain" ? hover.hovered : -1,
@@ -218,6 +219,7 @@ export function MoleculeView() {
         />
       </div>
       <Canvas
+        frameloop="demand"
         gl={{ antialias: true }}
         dpr={[1, Math.min(window.devicePixelRatio || 1, 2)]}
         camera={{ position: [0, 0, 100], near: 0.1, far: 5000 }}
