@@ -20,5 +20,9 @@
   },
   "devDependencies": {
     "typescript": "~5.8.3"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "tailwindcss": "^4.1.14"
   }
 }
