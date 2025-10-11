@@ -15,6 +15,7 @@ import { useHoverHighlight } from "../lib/hooks/useHoverHighlight";
 import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
+import { StructureControls } from "./StructureControls";
 
 export function MoleculeView() {
   // Controls: parsing + rendering
@@ -206,49 +207,15 @@ export function MoleculeView() {
     <div style={{ display: 'flex', height: '100%', flex: 1 }}>
       <Leva collapsed={false} oneLineLabels hideCopyButton />
       <div className="absolute top-3 left-3 z-10 w-96">
-        <div className="rounded-lg bg-zinc-900/80 p-3 text-zinc-200 backdrop-blur">
-          <div className="mb-2 text-sm font-semibold">Load file</div>
-          <input
-            type="text"
-            value={sourceUrl}
-            onChange={(e) => setSourceUrl(e.target.value)}
-            placeholder="/models/1IGY.pdb or URL"
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-zinc-500"
-          />
-          {scene?.tables?.chains && scene.tables.chains.length > 0 && (
-            <div className="mt-3">
-              <div className="my-2 h-px bg-zinc-800" />
-              <div className="mb-2 text-sm font-semibold">Chains</div>
-              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
-                {scene.tables.chains.map((c, idx) => (
-                  <label key={idx} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-zinc-700 bg-zinc-900"
-                      checked={chainSelected[idx] !== false}
-                      onChange={(e) => handleChainCheckbox(idx, e.target.checked)}
-                    />
-                    <span>{c.id || "(blank)"}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="flex gap-2 pt-3">
-                <button
-                  onClick={handleAllChains}
-                  className="rounded-md border border-zinc-600 bg-zinc-700 px-3 py-1.5 text-xs text-zinc-100 hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-500 transition-colors"
-                >
-                  All
-                </button>
-                <button
-                  onClick={handleNoChains}
-                  className="rounded-md border border-zinc-600 bg-zinc-700 px-3 py-1.5 text-xs text-zinc-100 hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-500 transition-colors"
-                >
-                  None
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <StructureControls
+          scene={scene as MolScene | null}
+          sourceUrl={sourceUrl}
+          onSourceUrlChange={setSourceUrl}
+          chainSelected={chainSelected}
+          onToggleChain={handleChainCheckbox}
+          onAllChains={handleAllChains}
+          onNoChains={handleNoChains}
+        />
       </div>
       <Canvas
         gl={{ antialias: true }}
