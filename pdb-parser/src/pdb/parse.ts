@@ -300,7 +300,7 @@ function constructBonds(
 }
 
 export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}): MolScene {
-  const { altLocPolicy = "occupancy", modelSelection = 1, bondPolicy = "conect+heuristic" } = options;
+  const { altLocPolicy = "occupancy", modelSelection, bondPolicy = "conect+heuristic" } = options;
   const W = new WarningCollector();
 
   const atoms: AtomRecord[] = [];
@@ -329,6 +329,40 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
   let modelCount = 0;
   let currentModel: number | null = null;
   const lines = pdbText.split(/\r?\n/);
+
+  // Pre-scan MODEL records to determine effective model selection strategy
+  let firstModelSerial: number | null = null;
+  const modelSerials = new Set<number>();
+  {
+    let scanModelOrdinal = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.length < 6) continue;
+      const rec = slice(line, 0, 6).toUpperCase();
+      if (rec.startsWith("MODEL")) {
+        scanModelOrdinal++;
+        const m = parseIntSafe(slice(line, 10, 14)) ?? scanModelOrdinal;
+        if (firstModelSerial == null) firstModelSerial = m;
+        modelSerials.add(m);
+      }
+    }
+  }
+
+  let effectiveModelSelection: number | null = null;
+  if (modelSerials.size === 0) {
+    // No MODEL sections: do not filter by model at all (entire file is model 1)
+    effectiveModelSelection = null;
+  } else {
+    if (modelSelection == null) {
+      // Auto-pick: use the first encountered MODEL serial without warning
+      effectiveModelSelection = firstModelSerial!;
+    } else if (modelSerials.has(modelSelection)) {
+      effectiveModelSelection = modelSelection;
+    } else {
+      effectiveModelSelection = firstModelSerial!;
+      W.add(`Requested model ${modelSelection} not found; using first encountered model serial ${effectiveModelSelection}`);
+    }
+  }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     if (line.length < 6) continue;
@@ -349,9 +383,8 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
       // Filter by selected model if MODEL sections are present
       if (modelCount > 0) {
         const m = currentModel ?? null;
-        if (m === null || m !== modelSelection) {
-          continue; // skip atoms not in the selected model
-        }
+        if (m === null) continue;
+        if (effectiveModelSelection != null && m !== effectiveModelSelection) continue;
       }
       const serial = parseIntSafe(slice(line, 6, 11)) ?? 0;
       const name = slice(line, 12, 16);
@@ -454,7 +487,8 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
       // Respect model selection, similar to atoms
       if (modelCount > 0) {
         const m = currentModel ?? null;
-        if (m === null || m !== modelSelection) continue;
+        if (m === null) continue;
+        if (effectiveModelSelection != null && m !== effectiveModelSelection) continue;
       }
       // Try to get chainID from the TER line; fallback to lastAtomChainID
       const tChain = (slice(line, 21, 22).trim() || lastAtomChainID || " ");

@@ -24,8 +24,14 @@ export function MoleculeView() {
 
   const parseOpts = useControls("Parsing", {
     altLocPolicy: { value: "occupancy", options: ["occupancy", "all"] as ParseOptions["altLocPolicy"][] },
-    modelSelection: { value: 1, min: 1, step: 1 },
     bondPolicy: { value: "conect+heuristic", options: ["conect-only", "heuristic-if-missing", "conect+heuristic"] as ParseOptions["bondPolicy"][] },
+    useModelSelection: { value: false },
+    modelSelection: {
+      value: 1,
+      min: 1,
+      step: 1,
+      render: (get) => Boolean(get("Parsing.useModelSelection")),
+    },
   }, { collapsed: true });
 
   // Display: representation + overlay toggles
@@ -76,7 +82,13 @@ export function MoleculeView() {
     onTopHighlight: { value: true },
   });
 
-  const { scene, error, loading } = useMolScene(sourceUrl, parseOpts as ParseOptions);
+  // Only include modelSelection if user actually picked a number
+  const parseOptions: ParseOptions = {
+    altLocPolicy: parseOpts.altLocPolicy as ParseOptions["altLocPolicy"],
+    bondPolicy: parseOpts.bondPolicy as ParseOptions["bondPolicy"],
+    ...(parseOpts.useModelSelection ? { modelSelection: parseOpts.modelSelection as number } : {}),
+  };
+  const { scene, error, loading } = useMolScene(sourceUrl, parseOptions);
 
   // Chain selection domain hook
   const { chainSelected, setChainSelected, selectedChainIndices } = useChainSelection(scene as MolScene | null);
