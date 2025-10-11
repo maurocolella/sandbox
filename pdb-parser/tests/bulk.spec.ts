@@ -129,7 +129,7 @@ const WORKER_CODE = `
     try {
       if (!ready || !parsePdbToMolScene) throw new Error('Parser not initialized');
       const text = readFileSync(file, 'utf8');
-      const scene = parsePdbToMolScene(text, options);
+      let scene = parsePdbToMolScene(text, options);
       const warningsCount = Array.isArray(scene && scene.metadata && scene.metadata.warnings)
         ? scene.metadata.warnings.length
         : 0;
@@ -150,6 +150,8 @@ const WORKER_CODE = `
       } else {
         parentPort.postMessage({ ok: true, file, warningsCount, categories: cats });
       }
+      // Hint GC to reduce long-run memory pressure
+      try { scene = null; if (global && typeof global.gc === 'function') global.gc(); } catch {}
     } catch (e) {
       const msg = e && e.stack ? e.stack : (e && e.message ? e.message : String(e));
       parentPort.postMessage({ ok: false, file, error: msg });
@@ -278,19 +280,38 @@ describe("bulk-parse fixtures/pdb", () => {
     // eslint-disable-next-line no-console
     console.log(`[bulk][conect-only] Warning categories (files): altLoc=${resA.categoryFiles.altLoc}, heuristic=${resA.categoryFiles.heuristic}, missingCoords=${resA.categoryFiles.missingCoords}, other=${resA.categoryFiles.other}`);
 
-    // Pass 2: conect+heuristic (exercise neighbor search)
+    // Pass 2: conect+heuristic (exercise neighbor search) — process in chunks to mitigate long-run memory pressure
     const optsHeur: ParseOptions = { ...opts, bondPolicy: "conect+heuristic" };
-    const resB = await runPool(files, optsHeur, fixturesRoot, maxWorkers);
-    const successCountB = files.length - resB.failures.length;
+    const heurChunkSizeEnv = Number(process.env.BULK_HEUR_CHUNK_SIZE || "10000");
+    const heurChunkSize = Number.isFinite(heurChunkSizeEnv) && heurChunkSizeEnv > 0 ? heurChunkSizeEnv : 10000;
+    let aggBWarned = 0;
+    let aggBFailures: Failure[] = [];
+    const aggBCats = { altLoc: 0, heuristic: 0, missingCoords: 0, other: 0 };
+    for (let start = 0; start < files.length; start += heurChunkSize) {
+      const end = Math.min(files.length, start + heurChunkSize);
+      const chunk = files.slice(start, end);
+      // eslint-disable-next-line no-console
+      console.log(`[bulk] Heuristic chunk ${start}-${end - 1} (${chunk.length} files)`);
+      const chunkRes = await runPool(chunk, optsHeur, fixturesRoot, maxWorkers);
+      aggBWarned += chunkRes.warnedFiles;
+      aggBFailures = aggBFailures.concat(chunkRes.failures);
+      aggBCats.altLoc += chunkRes.categoryFiles.altLoc;
+      aggBCats.heuristic += chunkRes.categoryFiles.heuristic;
+      aggBCats.missingCoords += chunkRes.categoryFiles.missingCoords;
+      aggBCats.other += chunkRes.categoryFiles.other;
+      // eslint-disable-next-line no-console
+      console.log(`[bulk][heuristic][chunk] Success: ${chunk.length - chunkRes.failures.length}, Failures: ${chunkRes.failures.length}, FilesWithWarnings: ${chunkRes.warnedFiles}`);
+    }
+    const successCountB = files.length - aggBFailures.length;
     // eslint-disable-next-line no-console
-    console.log(`[bulk][conect+heuristic] Completed. Success: ${successCountB}, Failures: ${resB.failures.length}, FilesWithWarnings: ${resB.warnedFiles}`);
+    console.log(`[bulk][conect+heuristic] Completed. Success: ${successCountB}, Failures: ${aggBFailures.length}, FilesWithWarnings: ${aggBWarned}`);
     // eslint-disable-next-line no-console
-    console.log(`[bulk][conect+heuristic] Warning categories (files): altLoc=${resB.categoryFiles.altLoc}, heuristic=${resB.categoryFiles.heuristic}, missingCoords=${resB.categoryFiles.missingCoords}, other=${resB.categoryFiles.other}`);
+    console.log(`[bulk][conect+heuristic] Warning categories (files): altLoc=${aggBCats.altLoc}, heuristic=${aggBCats.heuristic}, missingCoords=${aggBCats.missingCoords}, other=${aggBCats.other}`);
 
     // Final assertion across both passes
-    if (resA.failures.length > 0 || resB.failures.length > 0) {
+    if (resA.failures.length > 0 || aggBFailures.length > 0) {
       const failedA = resA.failures.map((f) => f.file);
-      const failedB = resB.failures.map((f) => f.file);
+      const failedB = aggBFailures.map((f) => f.file);
       expect({ conectOnlyFailed: failedA, heuristicFailed: failedB }).toEqual({ conectOnlyFailed: [], heuristicFailed: [] });
     } else {
       expect(true).toBe(true);
