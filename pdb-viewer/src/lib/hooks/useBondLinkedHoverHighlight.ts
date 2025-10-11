@@ -30,7 +30,7 @@ export function useBondLinkedHoverHighlight(
   const tintColor = useMemo(() => new THREE.Color(tint), [tint]);
   const uniformsRef = useRef<
     { uHoveredChain: { value: number }; uHoveredResidue: { value: number }; uMode: { value: number }; uTint: { value: THREE.Color } }
-  | null>(null);
+    | null>(null);
 
   // Inject attributes and shader only once when enabled
   useEffect(() => {
@@ -119,7 +119,7 @@ export function useBondLinkedHoverHighlight(
       mat.onBeforeCompile = orig as unknown as (typeof mat)["onBeforeCompile"];
       mat.needsUpdate = true;
     };
-  }, [scene, bonds, tintColor, enabled]);
+  }, [scene, bonds, tintColor, enabled, hoveredChainIndex, hoveredResidueIndex, selectionMode]);
 
   // Update uniforms when hovered state or mode changes
   useEffect(() => {

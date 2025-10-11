@@ -11,9 +11,7 @@ import { useSceneObjects } from "../lib/hooks/useSceneObjects";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
-import { useChainHoverHighlight } from "../lib/hooks/useChainHoverHighlight";
-import { useAtomHoverHighlight } from "../lib/hooks/useAtomHoverHighlight";
-import { useResidueHoverHighlight } from "../lib/hooks/useResidueHoverHighlight";
+import { useHoverHighlight } from "../lib/hooks/useHoverHighlight";
 import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
@@ -123,36 +121,22 @@ export function MoleculeView() {
 
   // Hover highlight hooks for different selection granularity (only one enabled at a time)
   const isSpheres = display.representation === "spheres";
-  const atomHover = useAtomHoverHighlight(
+  const hover = useHoverHighlight(
     filteredScene,
     objects.atoms,
+    selection.mode as "atom" | "residue" | "chain",
     selection.hoverTint as string,
-    isSpheres && selection.mode === "atom",
+    isSpheres,
     true
   );
-  const residueHover = useResidueHoverHighlight(
-    filteredScene,
-    objects.atoms,
-    selection.hoverTint as string,
-    isSpheres && selection.mode === "residue",
-    true
-  );
-  const chainHover = useChainHoverHighlight(
-    filteredScene,
-    objects.atoms,
-    selection.hoverTint as string,
-    isSpheres && selection.mode === "chain",
-    true
-  );
-  const hover = selection.mode === "atom" ? atomHover : selection.mode === "residue" ? residueHover : chainHover;
 
   // Bond tubes linked hover highlight: respond to hovered chain/residue from atom mesh
   useBondLinkedHoverHighlight(
     filteredScene,
     objects.bonds as unknown as THREE.InstancedMesh | undefined,
     selection.mode as "atom" | "residue" | "chain",
-    chainHover.hovered,
-    residueHover.hovered,
+    selection.mode === "chain" ? hover.hovered : -1,
+    selection.mode === "residue" ? hover.hovered : -1,
     selection.hoverTint as string,
     Boolean(objects.bonds)
   );
@@ -160,9 +144,9 @@ export function MoleculeView() {
   // Always-on-top hover overlays (depthTest=false) drawn last
   const { atomOverlay: hoverAtomOverlay, bondOverlay: hoverBondOverlay } = useHoverOverlays(filteredScene, {
     mode: selection.mode as "atom" | "residue" | "chain",
-    hoveredAtom: atomHover.hovered ?? -1,
-    hoveredResidue: residueHover.hovered,
-    hoveredChain: chainHover.hovered,
+    hoveredAtom: selection.mode === "atom" ? (hover.hovered ?? -1) : -1,
+    hoveredResidue: selection.mode === "residue" ? hover.hovered : -1,
+    hoveredChain: selection.mode === "chain" ? hover.hovered : -1,
     color: selection.hoverTint as string,
     radiusScale: spheres.radiusScale,
     sphereDetail: spheres.sphereDetail,
@@ -184,24 +168,21 @@ export function MoleculeView() {
   });
 
   const handleCanvasPointerLeave = useCallback(() => {
-    chainHover.onPointerOut();
-    residueHover.onPointerOut();
-  }, [chainHover, residueHover]);
+    hover.onPointerOut();
+  }, [hover]);
 
   const handleScenePointerMove = useCallback((e: ThreeEvent<PointerEvent>) => {
     if (!objects.atoms) return;
     const hits = e.intersections || [];
     const hitAtoms = hits.some((i) => i.object === objects.atoms);
     if (!hitAtoms) {
-      chainHover.onPointerOut();
-      residueHover.onPointerOut();
+      hover.onPointerOut();
     }
-  }, [objects.atoms, chainHover, residueHover]);
+  }, [objects.atoms, hover]);
 
   const handleScenePointerLeave = useCallback(() => {
-    chainHover.onPointerOut();
-    residueHover.onPointerOut();
-  }, [chainHover, residueHover]);
+    hover.onPointerOut();
+  }, [hover]);
 
   // Ensure bonds/backbone do not steal pointer events; atoms drive hover state
   useEffect(() => {
