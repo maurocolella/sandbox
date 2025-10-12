@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MolScene, ParseOptions } from "pdb-parser";
-import { parsePdbToMolScene } from "pdb-parser";
+import * as PDB from "pdb-parser";
 
 export function useMolScene(url: string, options: ParseOptions): { scene: MolScene | null, error?: string, loading: boolean } {
   const [scene, setScene] = useState<MolScene | null>(null);
@@ -17,7 +17,17 @@ export function useMolScene(url: string, options: ParseOptions): { scene: MolSce
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to fetch PDB: ${res.status} ${res.statusText}`);
         const text = await res.text();
-        const parsed = parsePdbToMolScene(text, options);
+        let parsed: MolScene;
+        const maybe = PDB as unknown as { parsePdbToMolScene: (t: string, o: ParseOptions) => MolScene; parsePdbToMolSceneAsync?: (t: string, o: ParseOptions) => Promise<MolScene> };
+        if (typeof maybe.parsePdbToMolSceneAsync === "function") {
+          try {
+            parsed = await maybe.parsePdbToMolSceneAsync(text, options);
+          } catch {
+            parsed = maybe.parsePdbToMolScene(text, options);
+          }
+        } else {
+          parsed = maybe.parsePdbToMolScene(text, options);
+        }
         if (mounted) setScene(parsed);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
