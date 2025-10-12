@@ -134,6 +134,18 @@ export function MoleculeView() {
     false
   );
 
+  // Track camera motion to suspend expensive hover raycasts while orbiting/damping
+  const isCameraMoving = useRef<boolean>(false);
+  const cameraIdleTimer = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (cameraIdleTimer.current !== null) {
+        clearTimeout(cameraIdleTimer.current);
+        cameraIdleTimer.current = null;
+      }
+    };
+  }, []);
+
   const lookups = useSelectionLookups(filteredScene as MolScene | null);
 
   // Bond tubes linked hover highlight: respond to hovered chain/residue from atom mesh
@@ -198,6 +210,9 @@ export function MoleculeView() {
   // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
   useCameraFrameOnScene(scene as MolScene | null, controlsRef.current, loading);
 
+  const atomCount = filteredScene?.atoms?.count ?? 0;
+  const bondCount = filteredScene?.bonds?.count ?? 0;
+
   function ManualRaycast({ atoms, onHover, onOut }: {
     atoms: THREE.InstancedMesh | undefined;
     onHover: (e: ThreeEvent<PointerEvent>) => void;
@@ -208,6 +223,8 @@ export function MoleculeView() {
     const lastPos = useRef(new THREE.Vector2(9999, 9999));
     const leftDown = useRef(false);
     const eps = 0.001;
+    const lastInstanceId = useRef<number | null>(null);
+    const lastRaycastAt = useRef<number>(0);
 
     useEffect(() => {
       const el = gl.domElement;
@@ -217,25 +234,42 @@ export function MoleculeView() {
         const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         const pos = new THREE.Vector2(x, y);
         if (leftDown.current) return;
+        if (event.buttons !== 0) return; // skip raycasts during any mouse button drag
+        // While the camera is moving (orbit/damping), reduce raycast frequency instead of skipping entirely
+        if (isCameraMoving.current) {
+          const now = performance.now();
+          const minIntervalMs = 1000;
+          if (now - lastRaycastAt.current < minIntervalMs) return;
+          lastRaycastAt.current = now;
+        }
         if (pos.distanceTo(lastPos.current) < eps) return;
         lastPos.current.copy(pos);
         if (!atoms) {
-          onOut();
+          if (lastInstanceId.current !== null) {
+            onOut();
+            lastInstanceId.current = null;
+            invalidate();
+          }
           return;
         }
         rayRef.current.setFromCamera(pos, camera);
         const hit = rayRef.current.intersectObject(atoms, false)[0];
         const instanceId = hit?.instanceId;
         if (instanceId == null) {
-          onOut();
-        } else {
+          if (lastInstanceId.current !== null) {
+            onOut();
+            lastInstanceId.current = null;
+            invalidate();
+          }
+        } else if (lastInstanceId.current !== instanceId) {
+          lastInstanceId.current = instanceId;
           const fakeEvt = {
             stopPropagation: () => {},
             instanceId,
           } as unknown as ThreeEvent<PointerEvent>;
           onHover(fakeEvt);
+          invalidate();
         }
-        invalidate();
       };
       const handleDown = () => { leftDown.current = true; };
       const handleUp = () => { leftDown.current = false; };
@@ -285,6 +319,31 @@ export function MoleculeView() {
             if (ctrl) controlsRef.current = ctrl as unknown as ControlsRef;
           }}
           enableDamping
+          onStart={() => {
+            isCameraMoving.current = true;
+            if (cameraIdleTimer.current !== null) {
+              clearTimeout(cameraIdleTimer.current);
+              cameraIdleTimer.current = null;
+            }
+            // Clear hover immediately when orbit starts
+            hover.onPointerOut();
+            invalidate();
+          }}
+          onChange={() => {
+            // Any camera change marks movement; release after short idle
+            isCameraMoving.current = true;
+            if (cameraIdleTimer.current !== null) clearTimeout(cameraIdleTimer.current);
+            cameraIdleTimer.current = window.setTimeout(() => {
+              isCameraMoving.current = false;
+            }, 120);
+          }}
+          onEnd={() => {
+            // End fires before damping fully settles; wait briefly
+            if (cameraIdleTimer.current !== null) clearTimeout(cameraIdleTimer.current);
+            cameraIdleTimer.current = window.setTimeout(() => {
+              isCameraMoving.current = false;
+            }, 120);
+          }}
           dampingFactor={0.1}
           makeDefault
         />
@@ -325,6 +384,15 @@ export function MoleculeView() {
           )}
         </Suspense>
       </Canvas>
+      {!loading && filteredScene && (
+        <div className="absolute bottom-3 left-3 z-10">
+          <div className="rounded-lg bg-zinc-900/80 p-3 text-zinc-200 backdrop-blur">
+            <div className="mb-1 text-sm font-semibold">Model</div>
+            <div className="text-xs">Atoms: {atomCount.toLocaleString()}</div>
+            <div className="text-xs">Bonds: {bondCount.toLocaleString()}</div>
+          </div>
+        </div>
+      )}
       {loading && (
         <div style={{ position: "absolute", left: 12, bottom: 12, color: "#ccc", fontFamily: "monospace", fontSize: 12 }}>
           Loading…
