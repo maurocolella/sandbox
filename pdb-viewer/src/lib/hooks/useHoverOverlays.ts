@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { MolScene } from "pdb-parser";
+import type { SelectionLookups } from "./useSelectionLookups";
 
 export interface HoverOverlaysOptions {
   mode: "atom" | "residue" | "chain";
@@ -13,11 +14,13 @@ export interface HoverOverlaysOptions {
   bondRadius?: number; // default ~ tube radius
   bondSegments?: number; // cylinder radial segments
   scale?: number; // sphere scale multiplier to pop above (default 1.05)
+  onTop?: boolean;
 }
 
 export function useHoverOverlays(
   scene: MolScene | null,
-  opts: HoverOverlaysOptions
+  opts: HoverOverlaysOptions,
+  lookups?: SelectionLookups
 ) {
   const atomOverlay = useRef<THREE.InstancedMesh | null>(null);
   const bondOverlay = useRef<THREE.InstancedMesh | null>(null);
@@ -30,14 +33,16 @@ export function useHoverOverlays(
     if (!scene) return;
 
     const color = new THREE.Color(opts.color);
+    const onTop = Boolean(opts.onTop);
 
     // Atom overlay
     sphereGeomRef.current?.dispose();
     sphereGeomRef.current = new THREE.SphereGeometry(1, opts.sphereDetail, opts.sphereDetail);
-    const atomMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: false, depthWrite: false });
+    const atomMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop ? true : false, depthWrite: false });
     const aMesh = new THREE.InstancedMesh(sphereGeomRef.current, atomMat, scene.atoms.count);
     (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
     aMesh.count = 0;
+    aMesh.frustumCulled = false;
     atomOverlay.current = aMesh;
 
     // Bond overlay
@@ -46,10 +51,11 @@ export function useHoverOverlays(
     const bondSegs = Math.max(6, Math.floor(opts.bondSegments ?? 12));
     cylGeomRef.current = new THREE.CylinderGeometry(bondRadius, bondRadius, 1, bondSegs, 1, false);
     if (scene.bonds && scene.bonds.count > 0) {
-      const bondMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: false, depthWrite: false });
+      const bondMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop ? true : false, depthWrite: false });
       const bMesh = new THREE.InstancedMesh(cylGeomRef.current, bondMat, scene.bonds.count);
       (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
       bMesh.count = 0;
+      bMesh.frustumCulled = false;
       bondOverlay.current = bMesh;
     } else {
       bondOverlay.current = null;
@@ -66,7 +72,7 @@ export function useHoverOverlays(
       cylGeomRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene, opts.sphereDetail, opts.color]);
+  }, [scene, opts.sphereDetail, opts.color, opts.onTop]);
 
   // Update instance transforms when hover changes
   useEffect(() => {
@@ -75,7 +81,6 @@ export function useHoverOverlays(
 
     // Only support overlays for single-atom highlighting to keep updates light.
 
-    // Atom overlay update
     if (atomOverlay.current) {
       const m = new THREE.Matrix4();
       const s = new THREE.Vector3();
@@ -84,32 +89,41 @@ export function useHoverOverlays(
       const scaleMul = opts.scale ?? 1.05;
       let w = 0;
 
-      if (opts.mode === "atom" && opts.hoveredAtom >= 0) {
-        const i = opts.hoveredAtom;
-        const r = radii[i]! * opts.radiusScale * scaleMul;
-        pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
-        s.set(r, r, r);
-        m.compose(pos, new THREE.Quaternion(), s);
-        atomOverlay.current.setMatrixAt(w++, m);
-      } else if (opts.mode === "chain" && opts.hoveredChain >= 0 && scene.atoms.chainIndex) {
-        const ci = scene.atoms.chainIndex;
-        for (let i = 0; i < scene.atoms.count; i++) {
-          if (ci[i] !== opts.hoveredChain) continue;
+      let atomIdxs: number[] | undefined;
+      if (opts.mode === "atom" && opts.hoveredAtom >= 0) atomIdxs = [opts.hoveredAtom];
+      else if (opts.mode === "chain" && opts.hoveredChain >= 0) atomIdxs = lookups?.atomsByChain[opts.hoveredChain];
+      else if (opts.mode === "residue" && opts.hoveredResidue >= 0) atomIdxs = lookups?.atomsByResidue[opts.hoveredResidue];
+
+      if (atomIdxs && atomIdxs.length > 0) {
+        for (let k = 0; k < atomIdxs.length; k++) {
+          const i = atomIdxs[k]!;
           const r = radii[i]! * opts.radiusScale * scaleMul;
           pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
           s.set(r, r, r);
           m.compose(pos, new THREE.Quaternion(), s);
           atomOverlay.current.setMatrixAt(w++, m);
         }
-      } else if (opts.mode === "residue" && opts.hoveredResidue >= 0 && scene.atoms.residueIndex) {
-        const ri = scene.atoms.residueIndex;
-        for (let i = 0; i < scene.atoms.count; i++) {
-          if (ri[i] !== opts.hoveredResidue) continue;
-          const r = radii[i]! * opts.radiusScale * scaleMul;
-          pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
-          s.set(r, r, r);
-          m.compose(pos, new THREE.Quaternion(), s);
-          atomOverlay.current.setMatrixAt(w++, m);
+      } else {
+        if (opts.mode === "chain" && opts.hoveredChain >= 0 && scene.atoms.chainIndex) {
+          const ci = scene.atoms.chainIndex;
+          for (let i = 0; i < scene.atoms.count; i++) {
+            if (ci[i] !== opts.hoveredChain) continue;
+            const r = radii[i]! * opts.radiusScale * scaleMul;
+            pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
+            s.set(r, r, r);
+            m.compose(pos, new THREE.Quaternion(), s);
+            atomOverlay.current.setMatrixAt(w++, m);
+          }
+        } else if (opts.mode === "residue" && opts.hoveredResidue >= 0 && scene.atoms.residueIndex) {
+          const ri = scene.atoms.residueIndex;
+          for (let i = 0; i < scene.atoms.count; i++) {
+            if (ri[i] !== opts.hoveredResidue) continue;
+            const r = radii[i]! * opts.radiusScale * scaleMul;
+            pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
+            s.set(r, r, r);
+            m.compose(pos, new THREE.Quaternion(), s);
+            atomOverlay.current.setMatrixAt(w++, m);
+          }
         }
       }
 
@@ -128,32 +142,55 @@ export function useHoverOverlays(
       const pos = new THREE.Vector3();
       const indexA = scene.bonds.indexA;
       const indexB = scene.bonds.indexB;
-      const chainIndex = scene.atoms.chainIndex;
-      const residueIndex = scene.atoms.residueIndex;
       let w = 0;
 
-      for (let i = 0; i < scene.bonds.count; i++) {
-        const ia = indexA[i]!;
-        const ib = indexB[i]!;
-        const match = (opts.mode === "atom" && opts.hoveredAtom >= 0 && (ia === opts.hoveredAtom || ib === opts.hoveredAtom))
-          || (opts.mode === "chain" && opts.hoveredChain >= 0 && chainIndex && (chainIndex[ia] === opts.hoveredChain || chainIndex[ib] === opts.hoveredChain))
-          || (opts.mode === "residue" && opts.hoveredResidue >= 0 && residueIndex && (residueIndex[ia] === opts.hoveredResidue || residueIndex[ib] === opts.hoveredResidue));
-        if (!match) continue;
-        a.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
-        b.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
-        dir.subVectors(b, a);
-        const len = dir.length();
-        if (len <= 1e-6) continue;
-        dir.normalize();
-        q.setFromUnitVectors(up, dir);
-        pos.addVectors(a, b).multiplyScalar(0.5);
-        m.compose(pos, q, new THREE.Vector3(1, len, 1));
-        bondOverlay.current.setMatrixAt(w++, m);
+      let bondIdxs: number[] | undefined;
+      if (opts.mode === "atom" && opts.hoveredAtom >= 0) bondIdxs = lookups?.bondsByAtom[opts.hoveredAtom];
+      else if (opts.mode === "chain" && opts.hoveredChain >= 0) bondIdxs = lookups?.bondsByChain[opts.hoveredChain];
+      else if (opts.mode === "residue" && opts.hoveredResidue >= 0) bondIdxs = lookups?.bondsByResidue[opts.hoveredResidue];
+
+      if (bondIdxs && bondIdxs.length > 0) {
+        for (let k = 0; k < bondIdxs.length; k++) {
+          const i = bondIdxs[k]!;
+          const ia = indexA[i]!;
+          const ib = indexB[i]!;
+          a.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
+          b.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
+          dir.subVectors(b, a);
+          const len = dir.length();
+          if (len <= 1e-6) continue;
+          dir.normalize();
+          q.setFromUnitVectors(up, dir);
+          pos.addVectors(a, b).multiplyScalar(0.5);
+          m.compose(pos, q, new THREE.Vector3(1, len, 1));
+          bondOverlay.current.setMatrixAt(w++, m);
+        }
+      } else {
+        const chainIndex = scene.atoms.chainIndex;
+        const residueIndex = scene.atoms.residueIndex;
+        for (let i = 0; i < scene.bonds.count; i++) {
+          const ia = indexA[i]!;
+          const ib = indexB[i]!;
+          const match = (opts.mode === "atom" && opts.hoveredAtom >= 0 && (ia === opts.hoveredAtom || ib === opts.hoveredAtom))
+            || (opts.mode === "chain" && opts.hoveredChain >= 0 && chainIndex && (chainIndex[ia] === opts.hoveredChain || chainIndex[ib] === opts.hoveredChain))
+            || (opts.mode === "residue" && opts.hoveredResidue >= 0 && residueIndex && (residueIndex[ia] === opts.hoveredResidue || residueIndex[ib] === opts.hoveredResidue));
+          if (!match) continue;
+          a.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
+          b.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
+          dir.subVectors(b, a);
+          const len = dir.length();
+          if (len <= 1e-6) continue;
+          dir.normalize();
+          q.setFromUnitVectors(up, dir);
+          pos.addVectors(a, b).multiplyScalar(0.5);
+          m.compose(pos, q, new THREE.Vector3(1, len, 1));
+          bondOverlay.current.setMatrixAt(w++, m);
+        }
       }
       bondOverlay.current.count = w;
       bondOverlay.current.instanceMatrix.needsUpdate = true;
     }
-  }, [scene, opts.mode, opts.hoveredAtom, opts.hoveredResidue, opts.hoveredChain, opts.radiusScale, opts.scale]);
+  }, [scene, opts.mode, opts.hoveredAtom, opts.hoveredResidue, opts.hoveredChain, opts.radiusScale, opts.scale, lookups]);
 
   return { atomOverlay: atomOverlay.current, bondOverlay: bondOverlay.current };
 }

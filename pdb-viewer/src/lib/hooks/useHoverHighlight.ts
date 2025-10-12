@@ -17,7 +17,8 @@ export function useHoverHighlight(
   mode: HoverGranularity,
   tint: THREE.ColorRepresentation = 0xff00ff,
   enabled: boolean = true,
-  eventsEnabled: boolean = true
+  eventsEnabled: boolean = true,
+  patchShaders: boolean = true
 ): HoverHandlers {
   const hoveredRef = useRef<number>(-1);
   const [hovered, setHovered] = useState<number>(-1);
@@ -27,6 +28,7 @@ export function useHoverHighlight(
   useEffect(() => {
     if (!enabled) return;
     if (!scene || !atoms) return;
+    if (!patchShaders) return;
 
     const count = scene.atoms.count;
     const ibg = atoms.geometry as THREE.InstancedBufferGeometry;
@@ -99,7 +101,7 @@ export function useHoverHighlight(
       mat.onBeforeCompile = orig as unknown as (typeof mat)["onBeforeCompile"];
       mat.needsUpdate = true;
     };
-  }, [scene, atoms, tintColor, enabled, mode]);
+  }, [scene, atoms, tintColor, enabled, mode, patchShaders]);
 
   useEffect(() => {
     if (!enabled) {

@@ -32,6 +32,14 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         // Widen effective pickable surface near silhouettes
         if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
+
+        const count = scene.atoms.count;
+        const instanceToAtom = new Uint32Array(count);
+        for (let i = 0; i < count; i++) instanceToAtom[i] = i;
+        (atoms as THREE.Object3D & { userData: { instanceToAtom?: Uint32Array } }).userData = {
+          ...(atoms.userData as Record<string, unknown>),
+          instanceToAtom,
+        } as { instanceToAtom?: Uint32Array } as unknown as Record<string, unknown>;
       }
     }
     if (opts.bonds) {
@@ -46,6 +54,16 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         const mat = bonds.material as unknown as { side?: number; needsUpdate?: boolean };
         if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
+
+        if (scene.bonds && scene.bonds.count > 0) {
+          const indexA = scene.bonds.indexA as ArrayLike<number>;
+          const indexB = scene.bonds.indexB as ArrayLike<number>;
+          const endpoints = { a: new Uint32Array(indexA), b: new Uint32Array(indexB) };
+          (bonds as THREE.Object3D & { userData: { endpoints?: { a: Uint32Array; b: Uint32Array } } }).userData = {
+            ...(bonds.userData as Record<string, unknown>),
+            endpoints,
+          } as { endpoints?: { a: Uint32Array; b: Uint32Array } } as unknown as Record<string, unknown>;
+        }
       }
     }
     if (opts.backbone !== false) {

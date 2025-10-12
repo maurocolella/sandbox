@@ -10,6 +10,7 @@ import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useSceneObjects } from "../lib/hooks/useSceneObjects";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
+import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
 import { useHoverHighlight } from "../lib/hooks/useHoverHighlight";
 import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
@@ -129,8 +130,11 @@ export function MoleculeView() {
     effectiveMode,
     selection.hoverTint as string,
     isSpheres && selection.mode !== "none",
-    true
+    true,
+    false
   );
+
+  const lookups = useSelectionLookups(filteredScene as MolScene | null);
 
   // Bond tubes linked hover highlight: respond to hovered chain/residue from atom mesh
   useBondLinkedHoverHighlight(
@@ -152,7 +156,8 @@ export function MoleculeView() {
     color: selection.hoverTint as string,
     radiusScale: spheres.radiusScale,
     sphereDetail: spheres.sphereDetail,
-  });
+    onTop: selection.onTopHighlight,
+  }, lookups);
 
   // Ribbon group via hook (handles build + disposal)
   const ribbonGroup = useRibbonGroup(
@@ -173,7 +178,7 @@ export function MoleculeView() {
     hover.onPointerOut();
   }, [hover]);
 
-  
+
 
   // Ensure bonds/backbone do not steal pointer events; atoms drive hover state
   useEffect(() => {
@@ -225,7 +230,7 @@ export function MoleculeView() {
           onOut();
         } else {
           const fakeEvt = {
-            stopPropagation: () => {},
+            stopPropagation: () => { },
             instanceId,
           } as unknown as ThreeEvent<PointerEvent>;
           onHover(fakeEvt);
@@ -306,10 +311,10 @@ export function MoleculeView() {
                 )}
                 {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
                 {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
-                {isSpheres && selection.onTopHighlight && hoverAtomOverlay && (
+                {isSpheres && hoverAtomOverlay && (
                   <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />
                 )}
-                {isSpheres && selection.onTopHighlight && hoverBondOverlay && (
+                {isSpheres && hoverBondOverlay && (
                   <primitive key="hover-bond-overlay" object={hoverBondOverlay} />
                 )}
               </>
