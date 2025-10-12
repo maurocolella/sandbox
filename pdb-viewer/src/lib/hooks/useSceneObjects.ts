@@ -30,15 +30,31 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         if (typeof mat.vertexColors !== "undefined") mat.vertexColors = false;
         if (mat.color) mat.color.set("#ffffff");
         // Widen effective pickable surface near silhouettes
-        if (typeof mat.side !== "undefined") mat.side = THREE.DoubleSide;
+        if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
       }
     }
     if (opts.bonds) {
       bonds = makeBondTubes(scene) as InstancedMeshType | undefined;
+      if (bonds) {
+        // Replace base geometry with a simpler 8-sided cylinder (unit height, Y-up)
+        const oldGeom = bonds.geometry;
+        const radius = 0.06; // keep close to existing tube radius used elsewhere
+        const simple = new THREE.CylinderGeometry(radius, radius, 1, 8, 1, false);
+        bonds.geometry = simple as unknown as THREE.BufferGeometry;
+        oldGeom.dispose();
+        const mat = bonds.material as unknown as { side?: number; needsUpdate?: boolean };
+        if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
+        if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
+      }
     }
     if (opts.backbone !== false) {
       backbone = makeBackboneLines(scene, { color: opts.backbone?.color ?? 0xffffff }) as LineSegments | undefined;
+      if (backbone) {
+        const mat = backbone.material as unknown as { side?: number; needsUpdate?: boolean };
+        if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
+        if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
+      }
     }
 
     return { atoms, bonds, backbone };

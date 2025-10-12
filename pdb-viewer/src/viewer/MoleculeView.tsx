@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
-import { Canvas, type ThreeEvent } from "@react-three/fiber";
+import { Canvas, type ThreeEvent, useThree, invalidate } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
 import * as THREE from "three";
@@ -49,7 +49,7 @@ export function MoleculeView() {
 
   // Styling: material + background
   const style = useControls("Styling", {
-    materialKind: { value: "standard", options: ["basic", "lambert", "standard"] as const },
+    materialKind: { value: "lambert", options: ["basic", "lambert", "standard"] as const },
     background: { value: "#111111" },
   }, { collapsed: true });
 
@@ -173,18 +173,7 @@ export function MoleculeView() {
     hover.onPointerOut();
   }, [hover]);
 
-  const handleScenePointerMove = useCallback((e: ThreeEvent<PointerEvent>) => {
-    if (!objects.atoms) return;
-    const hits = e.intersections || [];
-    const hitAtoms = hits.some((i) => i.object === objects.atoms);
-    if (!hitAtoms) {
-      hover.onPointerOut();
-    }
-  }, [objects.atoms, hover]);
-
-  const handleScenePointerLeave = useCallback(() => {
-    hover.onPointerOut();
-  }, [hover]);
+  
 
   // Ensure bonds/backbone do not steal pointer events; atoms drive hover state
   useEffect(() => {
@@ -204,6 +193,63 @@ export function MoleculeView() {
   // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
   useCameraFrameOnScene(scene as MolScene | null, controlsRef.current, loading);
 
+  function ManualRaycast({ atoms, onHover, onOut }: {
+    atoms: THREE.InstancedMesh | undefined;
+    onHover: (e: ThreeEvent<PointerEvent>) => void;
+    onOut: () => void;
+  }) {
+    const { camera, gl } = useThree();
+    const rayRef = useRef(new THREE.Raycaster());
+    const lastPos = useRef(new THREE.Vector2(9999, 9999));
+    const leftDown = useRef(false);
+    const eps = 0.001;
+
+    useEffect(() => {
+      const el = gl.domElement;
+      const handleMove = (event: MouseEvent) => {
+        const rect = el.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        const pos = new THREE.Vector2(x, y);
+        if (leftDown.current) return;
+        if (pos.distanceTo(lastPos.current) < eps) return;
+        lastPos.current.copy(pos);
+        if (!atoms) {
+          onOut();
+          return;
+        }
+        rayRef.current.setFromCamera(pos, camera);
+        const hit = rayRef.current.intersectObject(atoms, false)[0];
+        const instanceId = hit?.instanceId;
+        if (instanceId == null) {
+          onOut();
+        } else {
+          const fakeEvt = {
+            stopPropagation: () => {},
+            instanceId,
+          } as unknown as ThreeEvent<PointerEvent>;
+          onHover(fakeEvt);
+        }
+        invalidate();
+      };
+      const handleDown = () => { leftDown.current = true; };
+      const handleUp = () => { leftDown.current = false; };
+      const handleLeave = () => { onOut(); };
+      el.addEventListener("mousemove", handleMove);
+      el.addEventListener("mousedown", handleDown);
+      el.addEventListener("mouseup", handleUp);
+      el.addEventListener("mouseleave", handleLeave);
+      return () => {
+        el.removeEventListener("mousemove", handleMove);
+        el.removeEventListener("mousedown", handleDown);
+        el.removeEventListener("mouseup", handleUp);
+        el.removeEventListener("mouseleave", handleLeave);
+      };
+    }, [gl, camera, atoms, onHover, onOut]);
+
+    return null;
+  }
+
   return (
     <div style={{ display: 'flex', height: '100%', flex: 1 }}>
       <Leva collapsed={false} oneLineLabels hideCopyButton />
@@ -220,7 +266,7 @@ export function MoleculeView() {
       </div>
       <Canvas
         frameloop="demand"
-        gl={{ antialias: true }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
         dpr={[1, Math.min(window.devicePixelRatio || 1, 2)]}
         camera={{ position: [0, 0, 100], near: 0.1, far: 5000 }}
         onPointerLeave={handleCanvasPointerLeave}
@@ -240,7 +286,7 @@ export function MoleculeView() {
         <AdaptiveDpr pixelated />
         <Preload all />
         <Suspense fallback={null}>
-          <group onPointerMove={handleScenePointerMove} onPointerLeave={handleScenePointerLeave}>
+          <group>
             {display.representation !== "spheres" && ribbonGroup && (
               <>
                 <primitive key={keys.ribbon} object={ribbonGroup} />
@@ -256,8 +302,6 @@ export function MoleculeView() {
                   <primitive
                     key={keys.atoms}
                     object={objects.atoms}
-                    onPointerMove={hover.onPointerMove}
-                    onPointerOut={hover.onPointerOut}
                   />
                 )}
                 {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
@@ -271,6 +315,9 @@ export function MoleculeView() {
               </>
             )}
           </group>
+          {display.representation === "spheres" && (
+            <ManualRaycast atoms={objects.atoms as THREE.InstancedMesh | undefined} onHover={hover.onPointerMove} onOut={hover.onPointerOut} />
+          )}
         </Suspense>
       </Canvas>
       {loading && (

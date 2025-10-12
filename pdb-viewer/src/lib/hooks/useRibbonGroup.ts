@@ -30,12 +30,28 @@ export function useRibbonGroup(
         segmentsPerPoint: 6,
         materialKind,
         color: 0xffffff,
-        doubleSided: true,
+        doubleSided: false,
         thickness: params.thickness,
       });
     }
     return null;
   }, [scene, representation, materialKind, params.thickness]);
+
+  // Force front-side materials on all ribbon meshes
+  useEffect(() => {
+    if (!group) return;
+    group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        const m = obj.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(m)) {
+          m.forEach((mm) => { mm.side = THREE.FrontSide; mm.needsUpdate = true; });
+        } else {
+          m.side = THREE.FrontSide;
+          m.needsUpdate = true;
+        }
+      }
+    });
+  }, [group]);
 
   // Dispose on change/unmount
   useEffect(() => {

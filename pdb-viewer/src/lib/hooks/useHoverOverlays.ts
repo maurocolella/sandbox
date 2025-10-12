@@ -26,6 +26,7 @@ export function useHoverOverlays(
 
   // Build overlay meshes and materials
   useEffect(() => {
+    // return
     if (!scene) return;
 
     const color = new THREE.Color(opts.color);
@@ -35,7 +36,7 @@ export function useHoverOverlays(
     sphereGeomRef.current = new THREE.SphereGeometry(1, opts.sphereDetail, opts.sphereDetail);
     const atomMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: false, depthWrite: false });
     const aMesh = new THREE.InstancedMesh(sphereGeomRef.current, atomMat, scene.atoms.count);
-    (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => {};
+    (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
     aMesh.count = 0;
     atomOverlay.current = aMesh;
 
@@ -47,7 +48,7 @@ export function useHoverOverlays(
     if (scene.bonds && scene.bonds.count > 0) {
       const bondMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: false, depthWrite: false });
       const bMesh = new THREE.InstancedMesh(cylGeomRef.current, bondMat, scene.bonds.count);
-      (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => {};
+      (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
       bMesh.count = 0;
       bondOverlay.current = bMesh;
     } else {
@@ -64,12 +65,15 @@ export function useHoverOverlays(
       sphereGeomRef.current = null;
       cylGeomRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, opts.sphereDetail, opts.color]);
 
   // Update instance transforms when hover changes
   useEffect(() => {
+    // return
     if (!scene) return;
+
+    // Only support overlays for single-atom highlighting to keep updates light.
 
     // Atom overlay update
     if (atomOverlay.current) {
