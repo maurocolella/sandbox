@@ -17,6 +17,7 @@ import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHigh
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 import { StructureControls } from "./StructureControls";
+import type { ReadyMsg, PickResult } from "./pickerWorker";
 
 export function MoleculeView() {
   // Controls: parsing + rendering
@@ -228,6 +229,13 @@ export function MoleculeView() {
     const eps = 0.001;
     const lastInstanceId = useRef<number | null>(null);
     const gridRef = useRef<{ cell: number; min: THREE.Vector3; buckets: Map<string, Uint32Array> } | null>(null);
+    const domElRef = useRef<HTMLCanvasElement | null>(null);
+
+    // Worker picker wiring
+    const workerRef = useRef<Worker | null>(null);
+    const workerReadyRef = useRef<boolean>(false);
+    const seqRef = useRef<number>(0);
+    const lastAppliedSeqRef = useRef<number>(-1);
 
     useEffect(() => {
       const P = positions;
@@ -254,8 +262,63 @@ export function MoleculeView() {
       gridRef.current = { cell, min, buckets: packed };
     }, [positions, radii, count, radiusScale]);
 
+    // Initialize/teardown worker when data changes
+    useEffect(() => {
+      const P = positions;
+      const R = radii;
+      const bbox = filteredScene?.bbox;
+      // Teardown old
+      if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; workerReadyRef.current = false; }
+      if (!P || !R || !bbox || count <= 0) return;
+      try {
+        const w = new Worker(new URL("./pickerWorker.ts", import.meta.url), { type: "module" });
+        workerRef.current = w;
+        w.onmessage = (ev: MessageEvent<ReadyMsg | PickResult>) => {
+          const data = ev.data;
+          if (data.type === "ready") {
+            workerReadyRef.current = true;
+            return;
+          }
+          if (data.type === "result") {
+            const { seq, instanceId } = data;
+            if (seq < lastAppliedSeqRef.current) return; // stale
+            lastAppliedSeqRef.current = seq;
+            const el = domElRef.current;
+            if (instanceId == null) {
+              if (lastInstanceId.current !== null) {
+                onOut();
+                lastInstanceId.current = null;
+                invalidate();
+              }
+              if (el) el.style.cursor = 'default';
+            } else if (lastInstanceId.current !== instanceId) {
+              lastInstanceId.current = instanceId;
+              const fakeEvt = { stopPropagation: () => {}, instanceId } as unknown as ThreeEvent<PointerEvent>;
+              onHover(fakeEvt);
+              invalidate();
+              if (el) el.style.cursor = 'pointer';
+            }
+          }
+        };
+        const initMsg = {
+          type: "init",
+          positions: P,
+          radii: R,
+          bboxMin: bbox.min as [number, number, number],
+          bboxMax: bbox.max as [number, number, number],
+        } as const;
+        w.postMessage(initMsg);
+      } catch {
+        // Fall back to main-thread DDA silently
+      }
+      return () => {
+        if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; workerReadyRef.current = false; }
+      };
+    }, [positions, radii, count, filteredScene?.bbox, onHover, onOut]);
+
     useEffect(() => {
       const el = gl.domElement;
+      domElRef.current = el;
       const handleMove = (event: MouseEvent) => {
         const rect = el.getBoundingClientRect();
         const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -313,6 +376,24 @@ export function MoleculeView() {
         const stride = moving ? 2 : 1; // skip cells while moving
         const maxCells = moving ? 64 : 2048;
         const maxCandidates = moving ? 256 : Number.MAX_SAFE_INTEGER;
+
+        // Worker fast path
+        if (workerRef.current && workerReadyRef.current) {
+          const seq = ++seqRef.current;
+          const msg = {
+            type: "pick",
+            origin: [ro.x, ro.y, ro.z] as [number, number, number],
+            direction: [rd.x, rd.y, rd.z] as [number, number, number],
+            moving,
+            stride,
+            maxCells,
+            maxCandidates,
+            radiusScale,
+            seq,
+          } as const;
+          workerRef.current.postMessage(msg);
+          return;
+        }
 
         // 3D DDA voxel traversal
         const startX = ro.x + rd.x * tRange.t0;
