@@ -1,3 +1,8 @@
+/*
+ Title: useRenderKeys
+ Description: Produces stable React render keys derived from selection and overlay toggles
+ to force remounting of scene primitives when visual configuration changes.
+*/
 import { useMemo } from "react";
 
 export type Representation = "spheres" | "ribbon-tube" | "ribbon-flat";

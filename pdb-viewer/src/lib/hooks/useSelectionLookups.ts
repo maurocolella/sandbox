@@ -1,3 +1,8 @@
+/*
+ Title: useSelectionLookups
+ Description: Builds lookup tables (atoms/bonds by residue/chain/atom) from a MolScene to enable
+ efficient selection and hover overlays. Memoized per scene instance.
+*/
 import { useMemo } from "react";
 import type { MolScene } from "pdb-parser";
 

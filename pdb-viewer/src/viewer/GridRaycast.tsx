@@ -1,3 +1,9 @@
+/*
+ Title: GridRaycast
+ Description: Pointer raycasting component that builds a uniform grid over atom positions and performs
+ 3D DDA traversal to find the nearest hit efficiently. Emits onHover/onOut with instanceId, and degrades
+ work while the camera is moving.
+*/
 import { useEffect, useRef } from "react";
 import { useThree, type ThreeEvent, invalidate } from "@react-three/fiber";
 import * as THREE from "three";

@@ -1,3 +1,8 @@
+/*
+ Title: useMolScene
+ Description: Fetches a PDB file from a URL and parses it into a MolScene using pdb-parser.
+ Exposes { scene, error, loading } and re-runs when the URL or key parse options change.
+*/
 import { useEffect, useState } from "react";
 import type { MolScene, ParseOptions } from "pdb-parser";
 import * as PDB from "pdb-parser";

@@ -1,3 +1,8 @@
+/*
+ Title: useFilteredScene
+ Description: Derives a filtered MolScene based on selected chain indices. Returns the filtered scene
+ and a selectionKey for memoization and render key derivation.
+*/
 import { useMemo } from "react";
 import type { MolScene } from "pdb-parser";
 import { subsetMolSceneByChains } from "pdb-parser";

@@ -1,3 +1,8 @@
+/*
+ Title: useRibbonGroup
+ Description: Builds either a tubular ribbon or a flat ribbon mesh group from a MolScene
+ using pdb-parser helpers, enforces front-side materials, and disposes resources on change.
+*/
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { MolScene, AtomMeshOptions } from "pdb-parser";

@@ -1,3 +1,8 @@
+/*
+ Title: useSceneObjects
+ Description: Builds Three.js scene objects (atoms, bonds, backbone) from a MolScene based on options,
+ configures materials/geometry for viewer needs, and ensures proper disposal when options change.
+*/
 import { useEffect, useMemo } from "react";
 import type { MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
 import { makeAtomsMesh, makeBackboneLines, makeBondTubes } from "pdb-parser";
@@ -33,13 +38,6 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
 
-        const count = scene.atoms.count;
-        const instanceToAtom = new Uint32Array(count);
-        for (let i = 0; i < count; i++) instanceToAtom[i] = i;
-        (atoms as THREE.Object3D & { userData: { instanceToAtom?: Uint32Array } }).userData = {
-          ...(atoms.userData as Record<string, unknown>),
-          instanceToAtom,
-        } as { instanceToAtom?: Uint32Array } as unknown as Record<string, unknown>;
         atoms.frustumCulled = false;
       }
     }

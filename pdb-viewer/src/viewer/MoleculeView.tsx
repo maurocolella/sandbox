@@ -1,8 +1,13 @@
+/*
+ Title: MoleculeView
+ Description: Top-level viewer component. Loads/parses a MolScene, manages chain filtering and UI controls,
+ builds scene objects (atoms/bonds/backbone or ribbons), configures adaptive rendering, and wires a grid-
+ accelerated raycaster to drive hover overlays without shader patching.
+*/
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { Canvas, invalidate } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
 import { Leva, useControls } from "leva";
-import * as THREE from "three";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import type { ParseOptions, MolScene, AtomMeshOptions } from "pdb-parser";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
@@ -12,9 +17,9 @@ import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraF
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
 import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
-import { useHoverHighlight } from "../lib/hooks/useHoverHighlight";
-import { useBondLinkedHoverHighlight } from "../lib/hooks/useBondLinkedHoverHighlight";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
+import { useHoverState } from "../lib/hooks/useHoverState";
+import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 import { StructureControls } from "./StructureControls";
 import { GridRaycast, type BBox } from "./GridRaycast";
@@ -123,50 +128,25 @@ export function MoleculeView() {
     backbone: display.backbone && display.representation === "spheres" ? {} : false,
   });
 
-  // Hover highlight hooks for different selection granularity (only one enabled at a time)
+  // Hover state via hook (no shader patching)
   const isSpheres = display.representation === "spheres";
   const effectiveMode = (selection.mode === "none" ? "atom" : selection.mode) as "atom" | "residue" | "chain";
-  const hover = useHoverHighlight(
-    filteredScene,
-    objects.atoms,
-    effectiveMode,
-    selection.hoverTint as string,
-    isSpheres && selection.mode !== "none",
-    true,
-    false
+  const { hoveredAtom, hoveredResidue, hoveredChain, onHover, onOut } = useHoverState(
+    filteredScene as MolScene | null,
+    effectiveMode
   );
 
-  // Track camera motion to suspend expensive hover raycasts while orbiting/damping
-  const isCameraMoving = useRef<boolean>(false);
-  const cameraIdleTimer = useRef<number | null>(null);
-  useEffect(() => {
-    return () => {
-      if (cameraIdleTimer.current !== null) {
-        clearTimeout(cameraIdleTimer.current);
-        cameraIdleTimer.current = null;
-      }
-    };
-  }, []);
+  // Camera motion tracking via hook
+  const { isCameraMoving, onControlsStart, onControlsChange, onControlsEnd } = useCameraMotion(120);
 
   const lookups = useSelectionLookups(filteredScene as MolScene | null);
-
-  // Bond tubes linked hover highlight: respond to hovered chain/residue from atom mesh
-  useBondLinkedHoverHighlight(
-    filteredScene,
-    objects.bonds as unknown as THREE.InstancedMesh | undefined,
-    effectiveMode,
-    selection.mode === "chain" ? hover.hovered : -1,
-    selection.mode === "residue" ? hover.hovered : -1,
-    selection.hoverTint as string,
-    Boolean(objects.bonds) && selection.mode !== "none"
-  );
 
   // Always-on-top hover overlays (depthTest=false) drawn last
   const { atomOverlay: hoverAtomOverlay, bondOverlay: hoverBondOverlay } = useHoverOverlays(filteredScene, {
     mode: effectiveMode,
-    hoveredAtom: selection.mode === "atom" ? (hover.hovered ?? -1) : -1,
-    hoveredResidue: selection.mode === "residue" ? hover.hovered : -1,
-    hoveredChain: selection.mode === "chain" ? hover.hovered : -1,
+    hoveredAtom: selection.mode === "atom" ? hoveredAtom : -1,
+    hoveredResidue: selection.mode === "residue" ? hoveredResidue : -1,
+    hoveredChain: selection.mode === "chain" ? hoveredChain : -1,
     color: selection.hoverTint as string,
     radiusScale: spheres.radiusScale,
     sphereDetail: spheres.sphereDetail,
@@ -189,10 +169,8 @@ export function MoleculeView() {
   });
 
   const handleCanvasPointerLeave = useCallback(() => {
-    hover.onPointerOut();
-  }, [hover]);
-
-
+    onOut();
+  }, [onOut]);
 
   // Ensure bonds/backbone do not steal pointer events; atoms drive hover state
   useEffect(() => {
@@ -204,17 +182,12 @@ export function MoleculeView() {
     }
   }, [objects.bonds, objects.backbone]);
 
-  useEffect(() => {
-    document.body.style.background = style.background;
-  }, [style.background]);
-
   const controlsRef = useRef<ControlsRef | null>(null);
   // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
   useCameraFrameOnScene(scene as MolScene | null, controlsRef.current, loading);
 
   const atomCount = filteredScene?.atoms?.count ?? 0;
   const bondCount = filteredScene?.bonds?.count ?? 0;
-
 
   return (
     <div style={{ display: 'flex', height: '100%', flex: 1 }}>
@@ -247,30 +220,12 @@ export function MoleculeView() {
           }}
           enableDamping
           onStart={() => {
-            isCameraMoving.current = true;
-            if (cameraIdleTimer.current !== null) {
-              clearTimeout(cameraIdleTimer.current);
-              cameraIdleTimer.current = null;
-            }
-            // Clear hover immediately when orbit starts
-            hover.onPointerOut();
+            onControlsStart();
+            onOut();
             invalidate();
           }}
-          onChange={() => {
-            // Any camera change marks movement; release after short idle
-            isCameraMoving.current = true;
-            if (cameraIdleTimer.current !== null) clearTimeout(cameraIdleTimer.current);
-            cameraIdleTimer.current = window.setTimeout(() => {
-              isCameraMoving.current = false;
-            }, 120);
-          }}
-          onEnd={() => {
-            // End fires before damping fully settles; wait briefly
-            if (cameraIdleTimer.current !== null) clearTimeout(cameraIdleTimer.current);
-            cameraIdleTimer.current = window.setTimeout(() => {
-              isCameraMoving.current = false;
-            }, 120);
-          }}
+          onChange={onControlsChange}
+          onEnd={onControlsEnd}
           dampingFactor={0.1}
           makeDefault
         />
@@ -278,33 +233,33 @@ export function MoleculeView() {
         <Preload all />
         <Suspense fallback={null}>
           <group>
-              {display.representation !== "spheres" && ribbonGroup && (
-                <>
-                  <primitive key={keys.ribbon} object={ribbonGroup} />
-                  {display.bonds && objects.bonds && (
-                    <primitive key={keys.bonds} object={objects.bonds} />
-                  )}
-                  {display.backbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
-                </>
-              )}
-              {display.representation === "spheres" && (
-                <>
-                  {objects.atoms && (
-                    <primitive
-                      key={keys.atoms}
-                      object={objects.atoms}
-                    />
-                  )}
-                  {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
-                  {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
-                  {isSpheres && hoverAtomOverlay && (
-                    <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />
-                  )}
-                  {isSpheres && hoverBondOverlay && (
-                    <primitive key="hover-bond-overlay" object={hoverBondOverlay} />
-                  )}
-                </>
-              )}
+            {display.representation !== "spheres" && ribbonGroup && (
+              <>
+                <primitive key={keys.ribbon} object={ribbonGroup} />
+                {display.bonds && objects.bonds && (
+                  <primitive key={keys.bonds} object={objects.bonds} />
+                )}
+                {display.backbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+              </>
+            )}
+            {display.representation === "spheres" && (
+              <>
+                {objects.atoms && (
+                  <primitive
+                    key={keys.atoms}
+                    object={objects.atoms}
+                  />
+                )}
+                {objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
+                {objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+                {isSpheres && hoverAtomOverlay && (
+                  <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />
+                )}
+                {isSpheres && hoverBondOverlay && (
+                  <primitive key="hover-bond-overlay" object={hoverBondOverlay} />
+                )}
+              </>
+            )}
           </group>
           {display.representation === "spheres" && (
             <GridRaycast
@@ -314,8 +269,8 @@ export function MoleculeView() {
               radiusScale={spheres.radiusScale}
               bbox={filteredScene?.bbox as BBox | undefined}
               isCameraMovingRef={isCameraMoving}
-              onHover={hover.onPointerMove}
-              onOut={hover.onPointerOut}
+              onHover={onHover}
+              onOut={onOut}
             />
           )}
         </Suspense>

@@ -1,3 +1,8 @@
+/*
+ Title: useChainSelection
+ Description: Manages UI state for chain visibility. Initializes all chains to selected
+ on scene load, exposes helpers to toggle chains and derive selected indices and chain list.
+*/
 import { useEffect, useMemo, useState } from "react";
 import type { MolScene } from "pdb-parser";
 

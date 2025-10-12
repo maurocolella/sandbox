@@ -1,3 +1,8 @@
+/*
+ Title: useCameraFrameOnScene
+ Description: Computes a bounding box for the current MolScene and frames the camera/controls target
+ to fit the structure within view. Runs when scene or loading state changes.
+*/
 import { useEffect } from "react";
 import type { MolScene } from "pdb-parser";
 import { Vector3 } from "three";

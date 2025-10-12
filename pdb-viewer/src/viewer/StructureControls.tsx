@@ -1,3 +1,8 @@
+/*
+ Title: StructureControls
+ Description: Sidebar UI component for loading a PDB source URL and toggling chain visibility.
+ Renders inputs and checkboxes and delegates actions via props callbacks.
+*/
 import { useMemo } from "react";
 import type { MolScene } from "pdb-parser";
 
