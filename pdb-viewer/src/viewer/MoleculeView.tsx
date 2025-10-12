@@ -7,7 +7,7 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { Canvas, invalidate } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
-import { Leva, useControls } from "leva";
+import { Leva } from "leva";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import type { ParseOptions, MolScene, AtomMeshOptions } from "pdb-parser";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
@@ -20,6 +20,7 @@ import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 import { useHoverState } from "../lib/hooks/useHoverState";
 import { useCameraMotion } from "../lib/hooks/useCameraMotion";
+import { useRendererControls } from "../lib/hooks/useRendererControls";
 // Scene objects hook imported from ../lib/hooks/useSceneObjects
 import { StructureControls } from "./StructureControls";
 import { GridRaycast, type BBox } from "./GridRaycast";
@@ -29,65 +30,7 @@ export function MoleculeView() {
   // Controls: parsing + rendering
   const [sourceUrl, setSourceUrl] = useState<string>("/models/1IGY.pdb");
 
-  const parseOpts = useControls("Parsing", {
-    altLocPolicy: { value: "occupancy", options: ["occupancy", "all"] as ParseOptions["altLocPolicy"][] },
-    bondPolicy: { value: "conect+heuristic", options: ["conect-only", "heuristic-if-missing", "conect+heuristic"] as ParseOptions["bondPolicy"][] },
-    useModelSelection: { value: false },
-    modelSelection: {
-      value: 1,
-      min: 1,
-      step: 1,
-      render: (get) => Boolean(get("Parsing.useModelSelection")),
-    },
-  }, { collapsed: true });
-
-  // Display: representation + overlay toggles
-  const display = useControls("Display", {
-    representation: { value: "spheres", options: ["spheres", "ribbon-tube", "ribbon-flat"] as const },
-    atoms: {
-      value: true,
-      render: (get) => get("Display.representation") === "spheres",
-    },
-    bonds: true,
-    backbone: {
-      value: true,
-      render: (get) => get("Display.representation") === "spheres",
-    },
-  });
-
-  // Styling: material + background
-  const style = useControls("Styling", {
-    materialKind: { value: "lambert", options: ["basic", "lambert", "standard"] as const },
-    background: { value: "#111111" },
-  }, { collapsed: true });
-
-  // Spheres-only controls
-  const spheres = useControls("Spheres", {
-    sphereDetail: {
-      value: 16, min: 4, max: 32, step: 2,
-      render: (get) => get("Display.representation") === "spheres",
-    },
-    radiusScale: {
-      value: 0.3, min: 0.05, max: 2.0, step: 0.05,
-      render: (get) => get("Display.representation") === "spheres",
-    },
-  });
-
-  // Ribbon-only controls
-  const ribbon = useControls("Ribbon", {
-    thickness: {
-      value: 0.18, min: 0.02, max: 0.6, step: 0.01,
-      render: (get) => get("Display.representation") === "ribbon-flat",
-    },
-  });
-
-  // Selection toolbox: atom/residue/chain + hover tint
-  const selection = useControls("Selection", {
-    mode: { value: "residue", options: ["none", "atom", "residue", "chain"] as const },
-    hoverTint: { value: "#ff00ff" },
-    // outlineWidth: { value: 2.5, min: 0.5, max: 6.0, step: 0.1 },
-    onTopHighlight: { value: true },
-  });
+  const { parseOpts, display, style, spheres, ribbon, selection } = useRendererControls();
 
   // Only include modelSelection if user actually picked a number
   const parseOptions: ParseOptions = {
