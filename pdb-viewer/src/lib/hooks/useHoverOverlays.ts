@@ -38,7 +38,7 @@ export function useHoverOverlays(
     // Atom overlay
     sphereGeomRef.current?.dispose();
     sphereGeomRef.current = new THREE.SphereGeometry(1, opts.sphereDetail, opts.sphereDetail);
-    const atomMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop ? true : false, depthWrite: false });
+    const atomMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop, depthWrite: false });
     const aMesh = new THREE.InstancedMesh(sphereGeomRef.current, atomMat, scene.atoms.count);
     (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
     aMesh.count = 0;
@@ -52,7 +52,7 @@ export function useHoverOverlays(
     const bondSegs = Math.max(6, Math.floor(opts.bondSegments ?? 12));
     cylGeomRef.current = new THREE.CylinderGeometry(bondRadius, bondRadius, 1, bondSegs, 1, false);
     if (scene.bonds && scene.bonds.count > 0) {
-      const bondMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop ? true : false, depthWrite: false });
+      const bondMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop, depthWrite: false });
       const bMesh = new THREE.InstancedMesh(cylGeomRef.current, bondMat, scene.bonds.count);
       (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
       bMesh.count = 0;
@@ -75,6 +75,23 @@ export function useHoverOverlays(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, opts.sphereDetail, opts.color, opts.onTop]);
+
+  // React to onTop toggle without full rebuild (safety net)
+  useEffect(() => {
+    const onTop = Boolean(opts.onTop);
+    if (atomOverlay.current) {
+      const mat = atomOverlay.current.material as THREE.MeshBasicMaterial;
+      mat.depthTest = !onTop;
+      mat.depthWrite = false;
+      mat.needsUpdate = true;
+    }
+    if (bondOverlay.current) {
+      const mat = bondOverlay.current.material as THREE.MeshBasicMaterial;
+      mat.depthTest = !onTop;
+      mat.depthWrite = false;
+      mat.needsUpdate = true;
+    }
+  }, [opts.onTop]);
 
   // Update instance transforms when hover changes
   useEffect(() => {
