@@ -40,6 +40,7 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
           ...(atoms.userData as Record<string, unknown>),
           instanceToAtom,
         } as { instanceToAtom?: Uint32Array } as unknown as Record<string, unknown>;
+        atoms.frustumCulled = false;
       }
     }
     if (opts.bonds) {
@@ -64,6 +65,7 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
             endpoints,
           } as { endpoints?: { a: Uint32Array; b: Uint32Array } } as unknown as Record<string, unknown>;
         }
+        (bonds as THREE.Object3D).frustumCulled = false;
       }
     }
     if (opts.backbone !== false) {

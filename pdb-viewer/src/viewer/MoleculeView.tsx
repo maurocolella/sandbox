@@ -230,7 +230,7 @@ export function MoleculeView() {
           onOut();
         } else {
           const fakeEvt = {
-            stopPropagation: () => { },
+            stopPropagation: () => {},
             instanceId,
           } as unknown as ThreeEvent<PointerEvent>;
           onHover(fakeEvt);

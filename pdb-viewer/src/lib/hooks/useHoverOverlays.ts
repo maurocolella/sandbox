@@ -43,6 +43,7 @@ export function useHoverOverlays(
     (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
     aMesh.count = 0;
     aMesh.frustumCulled = false;
+    aMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     atomOverlay.current = aMesh;
 
     // Bond overlay
@@ -56,6 +57,7 @@ export function useHoverOverlays(
       (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
       bMesh.count = 0;
       bMesh.frustumCulled = false;
+      bMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       bondOverlay.current = bMesh;
     } else {
       bondOverlay.current = null;
@@ -81,10 +83,16 @@ export function useHoverOverlays(
 
     // Only support overlays for single-atom highlighting to keep updates light.
 
+    const mRef = { current: new THREE.Matrix4() };
+    const sRef = { current: new THREE.Vector3() };
+    const posRef = { current: new THREE.Vector3() };
+    const qRef = { current: new THREE.Quaternion() };
+    const upRef = { current: new THREE.Vector3(0, 1, 0) };
+    const aRef = { current: new THREE.Vector3() };
+    const bRef = { current: new THREE.Vector3() };
+    const dirRef = { current: new THREE.Vector3() };
+
     if (atomOverlay.current) {
-      const m = new THREE.Matrix4();
-      const s = new THREE.Vector3();
-      const pos = new THREE.Vector3();
       const radii = scene.atoms.radii;
       const scaleMul = opts.scale ?? 1.05;
       let w = 0;
@@ -98,10 +106,10 @@ export function useHoverOverlays(
         for (let k = 0; k < atomIdxs.length; k++) {
           const i = atomIdxs[k]!;
           const r = radii[i]! * opts.radiusScale * scaleMul;
-          pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
-          s.set(r, r, r);
-          m.compose(pos, new THREE.Quaternion(), s);
-          atomOverlay.current.setMatrixAt(w++, m);
+          posRef.current.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
+          sRef.current.set(r, r, r);
+          mRef.current.compose(posRef.current, qRef.current.identity(), sRef.current);
+          atomOverlay.current.setMatrixAt(w++, mRef.current);
         }
       } else {
         if (opts.mode === "chain" && opts.hoveredChain >= 0 && scene.atoms.chainIndex) {
@@ -109,20 +117,20 @@ export function useHoverOverlays(
           for (let i = 0; i < scene.atoms.count; i++) {
             if (ci[i] !== opts.hoveredChain) continue;
             const r = radii[i]! * opts.radiusScale * scaleMul;
-            pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
-            s.set(r, r, r);
-            m.compose(pos, new THREE.Quaternion(), s);
-            atomOverlay.current.setMatrixAt(w++, m);
+            posRef.current.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
+            sRef.current.set(r, r, r);
+            mRef.current.compose(posRef.current, qRef.current.identity(), sRef.current);
+            atomOverlay.current.setMatrixAt(w++, mRef.current);
           }
         } else if (opts.mode === "residue" && opts.hoveredResidue >= 0 && scene.atoms.residueIndex) {
           const ri = scene.atoms.residueIndex;
           for (let i = 0; i < scene.atoms.count; i++) {
             if (ri[i] !== opts.hoveredResidue) continue;
             const r = radii[i]! * opts.radiusScale * scaleMul;
-            pos.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
-            s.set(r, r, r);
-            m.compose(pos, new THREE.Quaternion(), s);
-            atomOverlay.current.setMatrixAt(w++, m);
+            posRef.current.set(scene.atoms.positions[i * 3]!, scene.atoms.positions[i * 3 + 1]!, scene.atoms.positions[i * 3 + 2]!);
+            sRef.current.set(r, r, r);
+            mRef.current.compose(posRef.current, qRef.current.identity(), sRef.current);
+            atomOverlay.current.setMatrixAt(w++, mRef.current);
           }
         }
       }
@@ -133,13 +141,6 @@ export function useHoverOverlays(
 
     // Bond overlay update
     if (bondOverlay.current && scene.bonds) {
-      const m = new THREE.Matrix4();
-      const q = new THREE.Quaternion();
-      const up = new THREE.Vector3(0, 1, 0);
-      const a = new THREE.Vector3();
-      const b = new THREE.Vector3();
-      const dir = new THREE.Vector3();
-      const pos = new THREE.Vector3();
       const indexA = scene.bonds.indexA;
       const indexB = scene.bonds.indexB;
       let w = 0;
@@ -154,16 +155,16 @@ export function useHoverOverlays(
           const i = bondIdxs[k]!;
           const ia = indexA[i]!;
           const ib = indexB[i]!;
-          a.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
-          b.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
-          dir.subVectors(b, a);
-          const len = dir.length();
+          aRef.current.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
+          bRef.current.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
+          dirRef.current.subVectors(bRef.current, aRef.current);
+          const len = dirRef.current.length();
           if (len <= 1e-6) continue;
-          dir.normalize();
-          q.setFromUnitVectors(up, dir);
-          pos.addVectors(a, b).multiplyScalar(0.5);
-          m.compose(pos, q, new THREE.Vector3(1, len, 1));
-          bondOverlay.current.setMatrixAt(w++, m);
+          dirRef.current.normalize();
+          qRef.current.setFromUnitVectors(upRef.current, dirRef.current);
+          posRef.current.addVectors(aRef.current, bRef.current).multiplyScalar(0.5);
+          mRef.current.compose(posRef.current, qRef.current, new THREE.Vector3(1, len, 1));
+          bondOverlay.current.setMatrixAt(w++, mRef.current);
         }
       } else {
         const chainIndex = scene.atoms.chainIndex;
@@ -175,16 +176,16 @@ export function useHoverOverlays(
             || (opts.mode === "chain" && opts.hoveredChain >= 0 && chainIndex && (chainIndex[ia] === opts.hoveredChain || chainIndex[ib] === opts.hoveredChain))
             || (opts.mode === "residue" && opts.hoveredResidue >= 0 && residueIndex && (residueIndex[ia] === opts.hoveredResidue || residueIndex[ib] === opts.hoveredResidue));
           if (!match) continue;
-          a.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
-          b.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
-          dir.subVectors(b, a);
-          const len = dir.length();
+          aRef.current.set(scene.atoms.positions[ia * 3]!, scene.atoms.positions[ia * 3 + 1]!, scene.atoms.positions[ia * 3 + 2]!);
+          bRef.current.set(scene.atoms.positions[ib * 3]!, scene.atoms.positions[ib * 3 + 1]!, scene.atoms.positions[ib * 3 + 2]!);
+          dirRef.current.subVectors(bRef.current, aRef.current);
+          const len = dirRef.current.length();
           if (len <= 1e-6) continue;
-          dir.normalize();
-          q.setFromUnitVectors(up, dir);
-          pos.addVectors(a, b).multiplyScalar(0.5);
-          m.compose(pos, q, new THREE.Vector3(1, len, 1));
-          bondOverlay.current.setMatrixAt(w++, m);
+          dirRef.current.normalize();
+          qRef.current.setFromUnitVectors(upRef.current, dirRef.current);
+          posRef.current.addVectors(aRef.current, bRef.current).multiplyScalar(0.5);
+          mRef.current.compose(posRef.current, qRef.current, new THREE.Vector3(1, len, 1));
+          bondOverlay.current.setMatrixAt(w++, mRef.current);
         }
       }
       bondOverlay.current.count = w;
