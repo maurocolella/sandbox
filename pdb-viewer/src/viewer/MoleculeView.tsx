@@ -28,7 +28,7 @@ import { GridRaycast, type BBox } from "./GridRaycast";
 
 export function MoleculeView() {
   // Controls: parsing + rendering
-  const [sourceUrl, setSourceUrl] = useState<string>("/models/1IGY.pdb");
+  const [sourceUrl, setSourceUrl] = useState<string>("/models/1HTQ.pdb");
 
   const { parseOpts, display, style, spheres, ribbon, selection } = useRendererControls();
 
