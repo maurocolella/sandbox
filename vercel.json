@@ -1,11 +1,5 @@
 {
-  "installCommand": "pnpm install",
-  "buildCommand": "pnpm build",
-  "outputDirectory": "pdb-viewer/dist",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
+  "installCommand": "pnpm -w install",
+  "buildCommand": "pnpm -w --filter mol-viewer build",
+  "outputDirectory": "mol-viewer/dist"
 }

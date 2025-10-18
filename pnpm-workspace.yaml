@@ -1,5 +1,6 @@
 packages:
-  - pdb-viewer
+  - mol-renderer
+  - mol-viewer
   - pdb-parser
 
 onlyBuiltDependencies:

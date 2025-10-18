@@ -1,5 +1,0 @@
-{
-  "installCommand": "pnpm -w install",
-  "buildCommand": "pnpm -w --filter pdb-viewer build",
-  "outputDirectory": "dist"
-}

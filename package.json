@@ -7,14 +7,17 @@
     "node": ">=22.0.0"
   },
   "workspaces": [
-    "pdb-viewer",
+    "mol-viewer",
+    "mol-renderer",
     "pdb-parser"
   ],
   "scripts": {
     "build": "pnpm -r build",
-    "build:viewer": "pnpm --filter pdb-viewer build",
+    "build:viewer": "pnpm --filter mol-viewer build",
+    "build:renderer": "pnpm --filter mol-renderer build",
     "build:parser": "pnpm --filter pdb-parser build",
-    "dev:viewer": "pnpm -C pdb-viewer dev",
+    "dev:viewer": "pnpm -C mol-viewer dev",
+    "dev:renderer": "pnpm -C mol-renderer dev",
     "test": "pnpm -r test",
     "clean": "pnpm -r clean || true"
   },
