@@ -34,9 +34,22 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         const mat = atoms.material as unknown as { vertexColors?: boolean; color?: { set: (v: string) => void }; side?: number; needsUpdate?: boolean };
         if (typeof mat.vertexColors !== "undefined") mat.vertexColors = false;
         if (mat.color) mat.color.set("#ffffff");
-        // Widen effective pickable surface near silhouettes
         if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
+
+        // Attach minimal lookups needed by a renderer-only overlay implementation.
+        const ci = scene.atoms.chainIndex ? new Uint32Array(scene.atoms.chainIndex) : undefined;
+        const ri = scene.atoms.residueIndex ? new Uint32Array(scene.atoms.residueIndex) : undefined;
+        (atoms as unknown as THREE.Object3D & { userData: { chainIndex?: Uint32Array; residueIndex?: Uint32Array; positions?: Float32Array; radii?: Float32Array; count?: number; bbox?: { min: [number, number, number]; max: [number, number, number] }; radiusScale?: number } }).userData = {
+          ...(atoms.userData as Record<string, unknown>),
+          ...(ci ? { chainIndex: ci } : {}),
+          ...(ri ? { residueIndex: ri } : {}),
+          positions: scene.atoms.positions,
+          radii: scene.atoms.radii,
+          count: scene.atoms.count,
+          ...(scene.bbox ? { bbox: { min: scene.bbox.min, max: scene.bbox.max } } : {}),
+          radiusScale: opts.atoms?.radiusScale ?? 1.0,
+        } as unknown as { chainIndex?: Uint32Array; residueIndex?: Uint32Array; positions?: Float32Array; radii?: Float32Array; count?: number; bbox?: { min: [number, number, number]; max: [number, number, number] }; radiusScale?: number };
 
         atoms.frustumCulled = false;
       }

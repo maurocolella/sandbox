@@ -25,7 +25,7 @@ export function StructureControls(props: StructureControlsProps) {
                 type="text"
                 value={props.sourceUrl}
                 onChange={(e) => props.onSourceUrlChange(e.target.value)}
-                placeholder="/models/1HTQ.pdb or URL"
+                placeholder="/models/1IGY.pdb or URL"
                 className="w-full rounded-md bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-zinc-500"
             />
             {chains && chains.length > 0 && (
