@@ -79,10 +79,10 @@ export function MainView() {
       <div style={{ width: "100%", height: "100%" }}>
         <Suspense fallback={null}>
           <MoleculeRender
+            scene={scene}
             background={style.background}
             renderControls={renderControls}
             overlayControls={overlayControls}
-            scene={scene}
             visibleChains={selectedChainIndices}
           />
         </Suspense>
