@@ -14,7 +14,7 @@ import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
 import { useSceneObjects } from "../lib/hooks/useSceneObjects";
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
-import type { RenderRepresentation } from "./types";
+import type { RenderControls, OverlayControls } from "./types";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 import { useHoverState } from "../lib/hooks/useHoverState";
 import { useCameraMotion } from "../lib/hooks/useCameraMotion";
@@ -23,19 +23,14 @@ import { GridRaycast, type BBox } from "./GridRaycast";
 
 interface MoleculeRenderProps {
   background: string;
-  representation: RenderRepresentation;
-  showAtoms: boolean;
-  showBonds: boolean;
-  showBackbone: boolean;
-  overlay: unknown;
+  renderControls: RenderControls;
+  overlayControls: OverlayControls;
   scene: MolScene | null;
   visibleChains: number[];
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
-  const { spheres, selection, style, ribbon } = useRendererControls() as unknown as {
-    spheres: { radiusScale: number; sphereDetail: number };
-    selection: { mode: string; hoverTint: string; onTopHighlight: boolean };
+  const { style, ribbon } = useRendererControls() as unknown as {
     style: { materialKind: "basic" | "lambert" | "standard"; background: string };
     ribbon: { thickness: number };
   };
@@ -44,23 +39,23 @@ export function MoleculeRender(props: MoleculeRenderProps) {
   const { filtered: filteredScene, selectionKey } = useFilteredScene(props.scene as MolScene | null, props.visibleChains);
 
   const objects = useSceneObjects(filteredScene, {
-    atoms: props.showAtoms && props.representation === "spheres"
-      ? { sphereDetail: spheres.sphereDetail, materialKind: style.materialKind, radiusScale: spheres.radiusScale }
+    atoms: props.renderControls.showAtoms && props.renderControls.renderMode === "spheres"
+      ? { sphereDetail: props.renderControls.sphereDetail, materialKind: style.materialKind, radiusScale: props.renderControls.radiusScale }
       : false,
-    bonds: props.showBonds,
-    backbone: props.showBackbone && props.representation === "spheres" ? {} : false,
+    bonds: props.renderControls.showBonds,
+    backbone: props.renderControls.showBackbone && props.renderControls.renderMode === "spheres" ? {} : false,
   });
 
   const ribbonGroup = useRibbonGroup(
     filteredScene,
-    props.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
+    props.renderControls.renderMode as "spheres" | "ribbon-tube" | "ribbon-flat",
     style.materialKind,
     { thickness: ribbon.thickness }
   );
 
   // Hover state via hook (no shader patching)
-  const isSpheres = props.representation === "spheres";
-  const effectiveMode = (selection.mode === "none" ? "atom" : selection.mode) as "atom" | "residue" | "chain";
+  const isSpheres = props.renderControls.renderMode === "spheres";
+  const effectiveMode = props.overlayControls.mode;
   const { hoveredAtom, hoveredResidue, hoveredChain, onHover, onOut } = useHoverState(
     filteredScene as MolScene | null,
     effectiveMode
@@ -74,22 +69,22 @@ export function MoleculeRender(props: MoleculeRenderProps) {
   // Always-on-top hover overlays (depthTest=false) drawn last
   const { atomOverlay: hoverAtomOverlay, bondOverlay: hoverBondOverlay } = useHoverOverlays(filteredScene, {
     mode: effectiveMode,
-    hoveredAtom: selection.mode === "atom" ? hoveredAtom : -1,
-    hoveredResidue: selection.mode === "residue" ? hoveredResidue : -1,
-    hoveredChain: selection.mode === "chain" ? hoveredChain : -1,
-    color: selection.hoverTint as string,
-    radiusScale: spheres.radiusScale,
-    sphereDetail: spheres.sphereDetail,
-    onTop: selection.onTopHighlight,
+    hoveredAtom: props.overlayControls.mode === "atom" ? hoveredAtom : -1,
+    hoveredResidue: props.overlayControls.mode === "residue" ? hoveredResidue : -1,
+    hoveredChain: props.overlayControls.mode === "chain" ? hoveredChain : -1,
+    color: props.overlayControls.hoverTint,
+    radiusScale: props.renderControls.radiusScale,
+    sphereDetail: props.renderControls.sphereDetail,
+    onTop: props.overlayControls.onTopHighlight,
   }, lookups);
 
   // Ribbon group is provided via props.objects.ribbon (cached in MainView)
 
   // Render keys (derived from selection + overlays + representation)
-  const keys = useRenderKeys(selectionKey, props.representation as Representation, {
-    atoms: props.showAtoms,
-    bonds: props.showBonds,
-    backbone: props.showBackbone,
+  const keys = useRenderKeys(selectionKey, props.renderControls.renderMode as Representation, {
+    atoms: props.renderControls.showAtoms,
+    bonds: props.renderControls.showBonds,
+    backbone: props.renderControls.showBackbone,
   });
 
   const handleCanvasPointerLeave = useCallback(() => {
@@ -141,25 +136,25 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <Preload all />
       <Suspense fallback={null}>
         <group>
-          {props.representation !== "spheres" && ribbonGroup && (
+          {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
-              {props.showBonds && objects.bonds && (
+              {props.renderControls.showBonds && objects.bonds && (
                 <primitive key={keys.bonds} object={objects.bonds} />
               )}
-              {props.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+              {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
           )}
-          {props.representation === "spheres" && (
+          {props.renderControls.renderMode === "spheres" && (
             <>
-              {props.showAtoms && objects.atoms && (
+              {props.renderControls.showAtoms && objects.atoms && (
                 <primitive
                   key={keys.atoms}
                   object={objects.atoms}
                 />
               )}
-              {props.showBonds && objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
-              {props.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
+              {props.renderControls.showBonds && objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
+              {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
               {isSpheres && hoverAtomOverlay && (
                 <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />
               )}
@@ -169,12 +164,12 @@ export function MoleculeRender(props: MoleculeRenderProps) {
             </>
           )}
         </group>
-        {props.representation === "spheres" && props.showAtoms && (
+        {props.renderControls.renderMode === "spheres" && props.renderControls.showAtoms && (
           <GridRaycast
             positions={filteredScene?.atoms?.positions}
             radii={filteredScene?.atoms?.radii}
             count={filteredScene?.atoms?.count ?? 0}
-            radiusScale={spheres.radiusScale}
+            radiusScale={props.renderControls.radiusScale}
             bbox={filteredScene?.bbox as BBox | undefined}
             isCameraMovingRef={isCameraMoving}
             onHover={onHover}

@@ -9,3 +9,18 @@ export interface RenderObjects {
   ribbon?: Object3D;
   surface?: Mesh;
 }
+
+export interface RenderControls {
+  renderMode: "spheres" | "ribbon-tube" | "ribbon-flat";
+  showAtoms: boolean;
+  showBonds: boolean;
+  showBackbone: boolean;
+  radiusScale: number;
+  sphereDetail: number;
+}
+
+export interface OverlayControls {
+  mode: "atom" | "residue" | "chain";
+  hoverTint: string;
+  onTopHighlight: boolean;
+}

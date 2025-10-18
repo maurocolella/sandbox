@@ -5,7 +5,7 @@ import { useRendererControls } from "../lib/hooks/useRendererControls";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { MoleculeRender } from "./MoleculeRender";
-import type { RenderRepresentation } from "./types";
+import type { RenderControls, OverlayControls } from "./types";
 import { Leva } from "leva";
 import { StructureControls } from "./StructureControls";
 
@@ -44,13 +44,20 @@ export function MainView() {
 
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
 
-  const overlay = useMemo(() => ({
+  const renderControls = useMemo<RenderControls>(() => ({
+    renderMode: display.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
+    showAtoms: display.atoms,
+    showBonds: display.bonds,
+    showBackbone: display.backbone,
+    radiusScale: spheres.radiusScale,
+    sphereDetail: spheres.sphereDetail,
+  }), [display.representation, display.atoms, display.bonds, display.backbone, spheres.radiusScale, spheres.sphereDetail]);
+
+  const overlayControls = useMemo<OverlayControls>(() => ({
     mode: (selection.mode === "none" ? "atom" : selection.mode) as "atom" | "residue" | "chain",
     hoverTint: selection.hoverTint,
     onTopHighlight: selection.onTopHighlight,
-    radiusScale: spheres.radiusScale,
-    sphereDetail: spheres.sphereDetail,
-  }), [selection.mode, selection.hoverTint, selection.onTopHighlight, spheres.radiusScale, spheres.sphereDetail]);
+  }), [selection.mode, selection.hoverTint, selection.onTopHighlight]);
 
   const atomCount = filteredScene?.atoms?.count ?? 0;
   const bondCount = filteredScene?.bonds?.count ?? 0;
@@ -73,11 +80,8 @@ export function MainView() {
         <Suspense fallback={null}>
           <MoleculeRender
             background={style.background}
-            representation={display.representation as RenderRepresentation}
-            showAtoms={display.atoms}
-            showBonds={display.bonds}
-            showBackbone={display.backbone}
-            overlay={overlay}
+            renderControls={renderControls}
+            overlayControls={overlayControls}
             scene={scene}
             visibleChains={selectedChainIndices}
           />
