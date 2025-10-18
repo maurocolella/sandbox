@@ -1,20 +1,18 @@
 import { Suspense, useCallback, useMemo, useState } from "react";
-import type { MolScene, AtomMeshOptions } from "pdb-parser";
+import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import { useRendererControls } from "../lib/hooks/useRendererControls";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
-import { useSceneObjects } from "../lib/hooks/useSceneObjects";
-import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
 import { MoleculeRender } from "./MoleculeRender";
 import type { RenderRepresentation } from "./types";
 import { Leva } from "leva";
 import { StructureControls } from "./StructureControls";
 
 export function MainView() {
-  const [sourceUrl, setSourceUrl] = useState<string>("/models/1HTQ.pdb");
+  const [sourceUrl, setSourceUrl] = useState<string>("/models/1IGY.pdb");
 
-  const { parseOpts, display, style, spheres, ribbon, selection } = useRendererControls();
+  const { parseOpts, display, style, spheres, selection } = useRendererControls();
 
   const parseOptions = useMemo(() => ({
     altLocPolicy: parseOpts.altLocPolicy,
@@ -46,29 +44,6 @@ export function MainView() {
 
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
 
-  const objectsBase = useSceneObjects(filteredScene, {
-    atoms: display.atoms && display.representation === "spheres"
-      ? { sphereDetail: spheres.sphereDetail, materialKind: style.materialKind as AtomMeshOptions["materialKind"], radiusScale: spheres.radiusScale }
-      : false,
-    bonds: display.bonds,
-    backbone: display.backbone && display.representation === "spheres" ? {} : false,
-  });
-
-  const ribbonGroup = useRibbonGroup(
-    filteredScene,
-    display.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
-    style.materialKind as AtomMeshOptions["materialKind"],
-    { thickness: ribbon.thickness }
-  );
-
-  const objects = useMemo(() => ({
-    atoms: objectsBase.atoms,
-    bonds: objectsBase.bonds,
-    backbone: objectsBase.backbone,
-    ribbon: display.representation !== "spheres" ? ribbonGroup ?? undefined : undefined,
-    surface: undefined,
-  }), [objectsBase.atoms, objectsBase.bonds, objectsBase.backbone, ribbonGroup, display.representation]);
-
   const overlay = useMemo(() => ({
     mode: (selection.mode === "none" ? "atom" : selection.mode) as "atom" | "residue" | "chain",
     hoverTint: selection.hoverTint,
@@ -76,6 +51,9 @@ export function MainView() {
     radiusScale: spheres.radiusScale,
     sphereDetail: spheres.sphereDetail,
   }), [selection.mode, selection.hoverTint, selection.onTopHighlight, spheres.radiusScale, spheres.sphereDetail]);
+
+  const atomCount = filteredScene?.atoms?.count ?? 0;
+  const bondCount = filteredScene?.bonds?.count ?? 0;
 
   return (
     <div style={{ display: 'flex', height: '100%', flex: 1 }}>
@@ -99,12 +77,21 @@ export function MainView() {
             showAtoms={display.atoms}
             showBonds={display.bonds}
             showBackbone={display.backbone}
-            showStats={true}
-            objects={objects}
             overlay={overlay}
+            scene={scene}
+            visibleChains={selectedChainIndices}
           />
         </Suspense>
       </div>
+      {!loading && filteredScene && (
+        <div className="absolute bottom-3 left-3 z-10">
+          <div className="rounded-lg bg-zinc-900/80 p-3 text-zinc-200 backdrop-blur">
+            <div className="mb-1 text-sm font-semibold">Model</div>
+            <div className="text-xs">Atoms: {atomCount.toLocaleString()}</div>
+            <div className="text-xs">Bonds: {bondCount.toLocaleString()}</div>
+          </div>
+        </div>
+      )}
       {loading && (
         <div style={{ position: "absolute", left: 12, bottom: 12, color: "#ccc", fontFamily: "monospace", fontSize: 12 }}>
           Loading…

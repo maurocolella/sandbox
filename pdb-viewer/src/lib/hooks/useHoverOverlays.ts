@@ -4,16 +4,16 @@
  Supports on-top rendering or depth-tested rendering, and updates instance transforms on hover changes.
 */
 import { useEffect, useRef } from "react";
-import * as THREE from "three";
 import type { MolScene } from "pdb-parser";
 import type { SelectionLookups } from "./useSelectionLookups";
+import { type ColorRepresentation, InstancedMesh, SphereGeometry, CylinderGeometry, Color, MeshBasicMaterial, DynamicDrawUsage, Material, Matrix4, Vector3, Quaternion } from "three";
 
 export interface HoverOverlaysOptions {
   mode: "atom" | "residue" | "chain";
   hoveredAtom: number;
   hoveredResidue: number;
   hoveredChain: number;
-  color: THREE.ColorRepresentation;
+  color: ColorRepresentation;
   radiusScale: number;
   sphereDetail: number;
   bondRadius?: number; // default ~ tube radius
@@ -27,50 +27,50 @@ export function useHoverOverlays(
   opts: HoverOverlaysOptions,
   lookups?: SelectionLookups
 ) {
-  const atomOverlay = useRef<THREE.InstancedMesh | null>(null);
-  const bondOverlay = useRef<THREE.InstancedMesh | null>(null);
-  const sphereGeomRef = useRef<THREE.SphereGeometry | null>(null);
-  const cylGeomRef = useRef<THREE.CylinderGeometry | null>(null);
+  const atomOverlay = useRef<InstancedMesh | null>(null);
+  const bondOverlay = useRef<InstancedMesh | null>(null);
+  const sphereGeomRef = useRef<SphereGeometry | null>(null);
+  const cylGeomRef = useRef<CylinderGeometry | null>(null);
 
   // Build overlay meshes and materials
   useEffect(() => {
     // return
     if (!scene) return;
 
-    const color = new THREE.Color(opts.color);
+    const color = new Color(opts.color);
     const onTop = Boolean(opts.onTop);
 
     // Atom overlay
     sphereGeomRef.current?.dispose();
-    sphereGeomRef.current = new THREE.SphereGeometry(1, opts.sphereDetail, opts.sphereDetail);
-    const atomMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop, depthWrite: !onTop });
-    const aMesh = new THREE.InstancedMesh(sphereGeomRef.current, atomMat, scene.atoms.count);
+    sphereGeomRef.current = new SphereGeometry(1, opts.sphereDetail, opts.sphereDetail);
+    const atomMat = new MeshBasicMaterial({ color, transparent: true, depthTest: !onTop, depthWrite: !onTop });
+    const aMesh = new InstancedMesh(sphereGeomRef.current, atomMat, scene.atoms.count);
     (aMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
     aMesh.count = 0;
     aMesh.frustumCulled = false;
-    aMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    aMesh.instanceMatrix.setUsage(DynamicDrawUsage);
     atomOverlay.current = aMesh;
 
     // Bond overlay
     cylGeomRef.current?.dispose();
     const bondRadius = opts.bondRadius ?? 0.06;
     const bondSegs = Math.max(6, Math.floor(opts.bondSegments ?? 12));
-    cylGeomRef.current = new THREE.CylinderGeometry(bondRadius, bondRadius, 1, bondSegs, 1, false);
+    cylGeomRef.current = new CylinderGeometry(bondRadius, bondRadius, 1, bondSegs, 1, false);
     if (scene.bonds && scene.bonds.count > 0) {
-      const bondMat = new THREE.MeshBasicMaterial({ color, transparent: true, depthTest: !onTop, depthWrite: !onTop });
-      const bMesh = new THREE.InstancedMesh(cylGeomRef.current, bondMat, scene.bonds.count);
+      const bondMat = new MeshBasicMaterial({ color, transparent: true, depthTest: !onTop, depthWrite: !onTop });
+      const bMesh = new InstancedMesh(cylGeomRef.current, bondMat, scene.bonds.count);
       (bMesh as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
       bMesh.count = 0;
       bMesh.frustumCulled = false;
-      bMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      bMesh.instanceMatrix.setUsage(DynamicDrawUsage);
       bondOverlay.current = bMesh;
     } else {
       bondOverlay.current = null;
     }
 
     return () => {
-      (atomOverlay.current?.material as THREE.Material | undefined)?.dispose?.();
-      if (bondOverlay.current) (bondOverlay.current.material as THREE.Material | undefined)?.dispose?.();
+      (atomOverlay.current?.material as Material | undefined)?.dispose?.();
+      if (bondOverlay.current) (bondOverlay.current.material as Material | undefined)?.dispose?.();
       atomOverlay.current = null;
       bondOverlay.current = null;
       sphereGeomRef.current?.dispose();
@@ -85,13 +85,13 @@ export function useHoverOverlays(
   useEffect(() => {
     const onTop = Boolean(opts.onTop);
     if (atomOverlay.current) {
-      const mat = atomOverlay.current.material as THREE.MeshBasicMaterial;
+      const mat = atomOverlay.current.material as MeshBasicMaterial;
       mat.depthTest = !onTop;
       mat.depthWrite = !onTop;
       mat.needsUpdate = true;
     }
     if (bondOverlay.current) {
-      const mat = bondOverlay.current.material as THREE.MeshBasicMaterial;
+      const mat = bondOverlay.current.material as MeshBasicMaterial;
       mat.depthTest = !onTop;
       mat.depthWrite = !onTop;
       mat.needsUpdate = true;
@@ -105,14 +105,14 @@ export function useHoverOverlays(
 
     // Only support overlays for single-atom highlighting to keep updates light.
 
-    const mRef = { current: new THREE.Matrix4() };
-    const sRef = { current: new THREE.Vector3() };
-    const posRef = { current: new THREE.Vector3() };
-    const qRef = { current: new THREE.Quaternion() };
-    const upRef = { current: new THREE.Vector3(0, 1, 0) };
-    const aRef = { current: new THREE.Vector3() };
-    const bRef = { current: new THREE.Vector3() };
-    const dirRef = { current: new THREE.Vector3() };
+    const mRef = { current: new Matrix4() };
+    const sRef = { current: new Vector3() };
+    const posRef = { current: new Vector3() };
+    const qRef = { current: new Quaternion() };
+    const upRef = { current: new Vector3(0, 1, 0) };
+    const aRef = { current: new Vector3() };
+    const bRef = { current: new Vector3() };
+    const dirRef = { current: new Vector3() };
 
     if (atomOverlay.current) {
       const radii = scene.atoms.radii;
@@ -185,7 +185,7 @@ export function useHoverOverlays(
           dirRef.current.normalize();
           qRef.current.setFromUnitVectors(upRef.current, dirRef.current);
           posRef.current.addVectors(aRef.current, bRef.current).multiplyScalar(0.5);
-          mRef.current.compose(posRef.current, qRef.current, new THREE.Vector3(1, len, 1));
+          mRef.current.compose(posRef.current, qRef.current, new Vector3(1, len, 1));
           bondOverlay.current.setMatrixAt(w++, mRef.current);
         }
       } else {
@@ -206,7 +206,7 @@ export function useHoverOverlays(
           dirRef.current.normalize();
           qRef.current.setFromUnitVectors(upRef.current, dirRef.current);
           posRef.current.addVectors(aRef.current, bRef.current).multiplyScalar(0.5);
-          mRef.current.compose(posRef.current, qRef.current, new THREE.Vector3(1, len, 1));
+          mRef.current.compose(posRef.current, qRef.current, new Vector3(1, len, 1));
           bondOverlay.current.setMatrixAt(w++, mRef.current);
         }
       }

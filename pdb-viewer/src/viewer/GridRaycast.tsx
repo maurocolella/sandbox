@@ -6,7 +6,7 @@
 */
 import { useEffect, useRef } from "react";
 import { useThree, type ThreeEvent, invalidate } from "@react-three/fiber";
-import * as THREE from "three";
+import { Raycaster, Vector2, Vector3, Box3 } from "three";
 
 export interface BBox {
   min: [number, number, number];
@@ -26,18 +26,18 @@ export interface GridRaycastProps {
 
 export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCameraMovingRef, onHover, onOut }: GridRaycastProps) {
   const { camera, gl } = useThree();
-  const rayRef = useRef(new THREE.Raycaster());
-  const lastPos = useRef(new THREE.Vector2(9999, 9999));
+  const rayRef = useRef(new Raycaster());
+  const lastPos = useRef(new Vector2(9999, 9999));
   const leftDown = useRef(false);
   const eps = 0.001;
   const lastInstanceId = useRef<number | null>(null);
-  const gridRef = useRef<{ cell: number; min: THREE.Vector3; buckets: Map<string, Uint32Array> } | null>(null);
+  const gridRef = useRef<{ cell: number; min: Vector3; buckets: Map<string, Uint32Array> } | null>(null);
 
   useEffect(() => {
     const P = positions;
     const R = radii;
     if (!P || !R || count <= 0 || !bbox) { gridRef.current = null; return; }
-    const min = new THREE.Vector3().fromArray(bbox.min);
+    const min = new Vector3().fromArray(bbox.min);
     let avg = 0;
     for (let i = 0; i < count; i++) avg += R[i]!;
     avg = avg / Math.max(1, count);
@@ -57,7 +57,7 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
     for (const [k, arr] of buckets) packed.set(k, Uint32Array.from(arr));
     gridRef.current = { cell, min, buckets: packed };
   }, [positions, radii, count, radiusScale, bbox]);
-  
+
   // No worker: keep main-thread DDA only
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
       const rect = el.getBoundingClientRect();
       const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      const pos = new THREE.Vector2(x, y);
+      const pos = new Vector2(x, y);
       if (leftDown.current) return;
       if (event.buttons !== 0) return; // skip raycasts during any mouse button drag
       if (isCameraMovingRef.current) {
@@ -99,7 +99,7 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
       const bboxMin = bbox?.min;
       const bboxMax = bbox?.max;
       if (!bboxMin || !bboxMax) return;
-      const bb = new THREE.Box3(new THREE.Vector3().fromArray(bboxMin), new THREE.Vector3().fromArray(bboxMax));
+      const bb = new Box3(new Vector3().fromArray(bboxMin), new Vector3().fromArray(bboxMax));
       const tRange: { t0: number; t1: number } = (() => {
         const epsD = 1e-8;
         let tmin = -Infinity, tmax = Infinity;
@@ -211,7 +211,7 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
       } else if (lastInstanceId.current !== instanceId) {
         lastInstanceId.current = instanceId;
         const fakeEvt = {
-          stopPropagation: () => {},
+          stopPropagation: () => { },
           instanceId,
         } as unknown as ThreeEvent<PointerEvent>;
         onHover(fakeEvt);

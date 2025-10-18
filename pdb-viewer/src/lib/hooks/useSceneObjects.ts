@@ -1,13 +1,12 @@
 /*
  Title: useSceneObjects
- Description: Builds Three.js scene objects (atoms, bonds, backbone) from a MolScene based on options,
+ Description: Builds js scene objects (atoms, bonds, backbone) from a MolScene based on options,
  configures materials/geometry for viewer needs, and ensures proper disposal when options change.
 */
 import { useEffect, useMemo } from "react";
 import type { MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
 import { makeAtomsMesh, makeBackboneLines, makeBondTubes } from "pdb-parser";
-import * as THREE from "three";
-import type { InstancedMesh as InstancedMeshType, LineSegments, Material } from "three";
+import { BufferGeometry, CylinderGeometry, FrontSide, Object3D, type InstancedMesh as InstancedMeshType, type LineSegments, type Material } from "three";
 
 export interface SceneBuildOptions {
   atoms: AtomMeshOptions | false;
@@ -34,13 +33,13 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         const mat = atoms.material as unknown as { vertexColors?: boolean; color?: { set: (v: string) => void }; side?: number; needsUpdate?: boolean };
         if (typeof mat.vertexColors !== "undefined") mat.vertexColors = false;
         if (mat.color) mat.color.set("#ffffff");
-        if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
+        if (typeof mat.side !== "undefined") mat.side = FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
 
         // Attach minimal lookups needed by a renderer-only overlay implementation.
         const ci = scene.atoms.chainIndex ? new Uint32Array(scene.atoms.chainIndex) : undefined;
         const ri = scene.atoms.residueIndex ? new Uint32Array(scene.atoms.residueIndex) : undefined;
-        (atoms as unknown as THREE.Object3D & { userData: { chainIndex?: Uint32Array; residueIndex?: Uint32Array; positions?: Float32Array; radii?: Float32Array; count?: number; bbox?: { min: [number, number, number]; max: [number, number, number] }; radiusScale?: number } }).userData = {
+        (atoms as unknown as Object3D & { userData: { chainIndex?: Uint32Array; residueIndex?: Uint32Array; positions?: Float32Array; radii?: Float32Array; count?: number; bbox?: { min: [number, number, number]; max: [number, number, number] }; radiusScale?: number } }).userData = {
           ...(atoms.userData as Record<string, unknown>),
           ...(ci ? { chainIndex: ci } : {}),
           ...(ri ? { residueIndex: ri } : {}),
@@ -60,30 +59,30 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
         // Replace base geometry with a simpler 8-sided cylinder (unit height, Y-up)
         const oldGeom = bonds.geometry;
         const radius = 0.06; // keep close to existing tube radius used elsewhere
-        const simple = new THREE.CylinderGeometry(radius, radius, 1, 8, 1, false);
-        bonds.geometry = simple as unknown as THREE.BufferGeometry;
+        const simple = new CylinderGeometry(radius, radius, 1, 8, 1, false);
+        bonds.geometry = simple as unknown as BufferGeometry;
         oldGeom.dispose();
         const mat = bonds.material as unknown as { side?: number; needsUpdate?: boolean };
-        if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
+        if (typeof mat.side !== "undefined") mat.side = FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
 
         if (scene.bonds && scene.bonds.count > 0) {
           const indexA = scene.bonds.indexA as ArrayLike<number>;
           const indexB = scene.bonds.indexB as ArrayLike<number>;
           const endpoints = { a: new Uint32Array(indexA), b: new Uint32Array(indexB) };
-          (bonds as THREE.Object3D & { userData: { endpoints?: { a: Uint32Array; b: Uint32Array } } }).userData = {
+          (bonds as Object3D & { userData: { endpoints?: { a: Uint32Array; b: Uint32Array } } }).userData = {
             ...(bonds.userData as Record<string, unknown>),
             endpoints,
           } as { endpoints?: { a: Uint32Array; b: Uint32Array } } as unknown as Record<string, unknown>;
         }
-        (bonds as THREE.Object3D).frustumCulled = false;
+        (bonds as Object3D).frustumCulled = false;
       }
     }
     if (opts.backbone !== false) {
       backbone = makeBackboneLines(scene, { color: opts.backbone?.color ?? 0xffffff }) as LineSegments | undefined;
       if (backbone) {
         const mat = backbone.material as unknown as { side?: number; needsUpdate?: boolean };
-        if (typeof mat.side !== "undefined") mat.side = THREE.FrontSide;
+        if (typeof mat.side !== "undefined") mat.side = FrontSide;
         if (typeof mat.needsUpdate !== "undefined") mat.needsUpdate = true;
       }
     }
