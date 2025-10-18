@@ -23,9 +23,17 @@ export interface RendererControls {
     bonds: boolean;
     backbone: boolean;
   };
+  surface: {
+    enabled: boolean;
+    kind: "vdw" | "sas" | "ses";
+    probeRadius: number;
+    voxelSize: number;
+    wireframe: boolean;
+  };
   style: {
     materialKind: MaterialKind;
     background: string;
+    metalShading: boolean;
   };
   spheres: {
     sphereDetail: number;
@@ -78,11 +86,24 @@ export function useRendererControls(): RendererControls {
     },
   });
 
+  const surface = useControls(
+    "Surface",
+    {
+      enabled: { value: false },
+      kind: { value: "vdw", options: ["vdw", "sas", "ses"] as const },
+      probeRadius: { value: 1.4, min: 0.5, max: 3.0, step: 0.1 },
+      voxelSize: { value: 1.0, min: 0.25, max: 3.0, step: 0.05 },
+      wireframe: { value: true },
+    },
+    { collapsed: true }
+  );
+
   const style = useControls(
     "Styling",
     {
       materialKind: { value: "lambert", options: ["basic", "lambert", "standard"] as const },
       background: { value: "#111111" },
+      metalShading: { value: false },
     },
     { collapsed: true }
   );
@@ -140,9 +161,17 @@ export function useRendererControls(): RendererControls {
       bonds: Boolean(display.bonds),
       backbone: Boolean(display.backbone),
     },
+    surface: {
+      enabled: Boolean(surface.enabled),
+      kind: surface.kind as "vdw" | "sas" | "ses",
+      probeRadius: Number(surface.probeRadius),
+      voxelSize: Number(surface.voxelSize),
+      wireframe: Boolean(surface.wireframe),
+    },
     style: {
       materialKind: style.materialKind as MaterialKind,
       background: String(style.background),
+      metalShading: Boolean(style.metalShading),
     },
     spheres: {
       sphereDetail: Number(spheres.sphereDetail),

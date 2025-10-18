@@ -19,6 +19,7 @@ import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 import { useHoverState } from "../lib/hooks/useHoverState";
 import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 import { GridRaycast, type BBox } from "./GridRaycast";
+import type { Object3D } from "three";
 
 interface MoleculeRenderProps {
   background: string;
@@ -26,6 +27,7 @@ interface MoleculeRenderProps {
   overlayControls: OverlayControls;
   scene: MolScene | null;
   visibleChains: number[];
+  surface?: Object3D | null;
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
@@ -133,6 +135,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <Preload all />
       <Suspense fallback={null}>
         <group>
+          {props.surface && <primitive key="surface" object={props.surface} />}
           {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />

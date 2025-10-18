@@ -15,12 +15,17 @@
     "react-dom": "^19.1.1",
     "leva": "^0.10.0",
     "pdb-parser": "workspace:*",
-    "mol-renderer": "workspace:*"
+    "mol-renderer": "workspace:*",
+    "chem-surface": "workspace:*",
+    "three": "^0.160.0",
+    "@react-three/fiber": "^9.0.0",
+    "@react-three/drei": "^9.121.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.0.2",
     "eslint": "^9.35.0",
     "eslint-plugin-react-hooks": "^5.2.0",

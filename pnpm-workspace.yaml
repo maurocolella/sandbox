@@ -1,6 +1,7 @@
 packages:
   - mol-renderer
   - mol-viewer
+  - chem-surface
   - pdb-parser
 
 onlyBuiltDependencies:
