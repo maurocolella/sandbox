@@ -9,7 +9,9 @@
   "workspaces": [
     "mol-viewer",
     "mol-renderer",
-    "pdb-parser"
+    "chem-surface",
+    "pdb-parser",
+    "pdb-harness"
   ],
   "scripts": {
     "build": "pnpm -r build",
@@ -19,6 +21,7 @@
     "dev:viewer": "pnpm -C mol-viewer dev",
     "dev:renderer": "pnpm -C mol-renderer dev",
     "test": "pnpm -r test",
+    "test:bulk": "pnpm --filter pdb-harness test",
     "clean": "pnpm -r clean || true"
   },
   "devDependencies": {

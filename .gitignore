@@ -2,6 +2,7 @@
 tm-align.rs/
 whitepapers/
 fixtures/pdb/
+pdb-harness/scratch/
 
 ### Rust
 target/

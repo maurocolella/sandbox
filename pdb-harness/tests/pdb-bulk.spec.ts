@@ -3,7 +3,7 @@ import { Worker } from "node:worker_threads";
 import { cpus } from "node:os";
 import { readdirSync, readFileSync, Dirent, existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { parsePdbToMolScene, type ParseOptions } from "../dist/index.js";
+import { parsePdbToMolScene, type ParseOptions } from "pdb-parser";
 
 function isPdbFile(path: string): boolean {
   const lower = path.toLowerCase();
@@ -165,7 +165,8 @@ async function runPool(files: string[], opts: ParseOptions, fixturesRoot: string
   const categoryFiles = { altLoc: 0, heuristic: 0, missingCoords: 0, other: 0 };
   if (files.length === 0) return { failures, warnedFiles, categoryFiles };
 
-  const parserModulePath = join(__dirname, "..", "dist", "index.js");
+  // Workers import the built parser directly (resolved through the workspace link)
+  const parserModulePath = join(__dirname, "..", "node_modules", "pdb-parser", "dist", "index.js");
   const total = files.length;
   let nextIndex = 0;
 
@@ -243,16 +244,15 @@ async function runPool(files: string[], opts: ParseOptions, fixturesRoot: string
   return { failures, warnedFiles, categoryFiles };
 }
 
-// Bulk-test all fixtures under fixtures/pdb
-// Ensure the symlink exists: pdb-parser/fixtures -> ../fixtures (top-level)
+// Bulk-test all fixtures under the repo-level fixtures/pdb (override with PDB_FIXTURES).
 // If missing, fail fast with a clear message.
 describe("bulk-parse fixtures/pdb", () => {
-  const fixturesRoot = join(__dirname, "..", "fixtures", "pdb");
+  const fixturesRoot = process.env.PDB_FIXTURES || join(__dirname, "..", "..", "fixtures", "pdb");
 
   it("parses all .pdb files without throwing and passes semantic checks (two bond policies)", async () => {
     if (!existsSync(fixturesRoot)) {
       throw new Error(
-        `fixtures/pdb not found at ${fixturesRoot}. Ensure a symlink exists: 'ln -s ../fixtures fixtures' inside pdb-parser/`,
+        `fixtures/pdb not found at ${fixturesRoot}. Download fixtures with pdb-crawler, or set PDB_FIXTURES.`,
       );
     }
 
