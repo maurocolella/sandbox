@@ -1,18 +1,31 @@
 /*
  Title: chunkedAtoms
  Description: Chunked, level-of-detail atom spheres and bond cylinders built on `chunked`.
- - Atoms: icosphere levels of 1280 / 320 / 80 / 20 triangles by on-screen atom radius.
- - Bonds: open-ended cylinders (the atom spheres cover the ends) with 8 / 5 / 3 sides, hidden entirely
-   once a bond is thinner than about half a pixel.
+ - Atoms: icosphere levels of 1280 / 720 / 320 / 80 / 20 triangles.
+ - Bonds: open-ended cylinders (the atom spheres cover the ends) with 12 / 8 / 5 / 3 sides, hidden once
+   thinner than a quarter pixel.
+ Level thresholds come from each level's geometric error, so switches happen where they are invisible.
 */
 import * as THREE from "three";
 import { buildChunked, type ChunkedInstances } from "./chunked";
 
-// IcosahedronGeometry detail d splits each edge into d + 1: 20 (d + 1)^2 triangles
-const SPHERE_DETAIL = [7, 3, 1, 0]; // 1280, 320, 80, 20 triangles
-const SPHERE_MIN_PX = [28, 9, 3]; // on-screen atom radius for levels 0..2
-const BOND_SIDES = [8, 5, 3]; // 16, 10, 6 triangles
-const BOND_MIN_PX = [1.5, 0.8, 0.4]; // on-screen bond radius for levels 0..2; thinner: hidden
+// Each level is used only while its largest deviation from the true shape stays under MAX_ERROR_PX on
+// screen, so a switch happens where the two levels look the same.
+const MAX_ERROR_PX = 0.5;
+
+// Spheres: IcosahedronGeometry detail d splits each edge into d + 1 (20 (d + 1)^2 triangles). The edge's
+// central angle is atan(2) / (d + 1); the largest deviation (at a face center) is about 1 - cos(angle/sqrt3).
+const SPHERE_DETAIL = [7, 5, 3, 1, 0]; // 1280, 720, 320, 80, 20 triangles
+const sphereError = (d: number) => 1 - Math.cos(Math.atan(2) / (d + 1) / Math.sqrt(3));
+// Bonds: an n-sided prism deviates from its cylinder by 1 - cos(pi / n); hidden below HIDE_BOND_PX
+const BOND_SIDES = [12, 8, 5, 3]; // 24, 16, 10, 6 triangles
+const bondError = (n: number) => 1 - Math.cos(Math.PI / n);
+const HIDE_BOND_PX = 0.25;
+
+/** Minimum on-screen feature radius for each level but the last: the size at which the next level's error hits the limit. */
+const minPxFor = (errors: number[]) => errors.slice(1).map((e) => MAX_ERROR_PX / e);
+const SPHERE_MIN_PX = minPxFor(SPHERE_DETAIL.map(sphereError)); // ~88, 39, 9.9, 2.5 px
+const BOND_MIN_PX = [...minPxFor(BOND_SIDES.map(bondError)), HIDE_BOND_PX]; // ~6.6, 2.6, 1.0, 0.25 px
 
 export interface ChunkedAtomsInput {
   count: number;

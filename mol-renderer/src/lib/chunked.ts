@@ -5,11 +5,12 @@
    an InstancedMesh whose bounding sphere comes from its actual instances, so frustum culling is
    conservative: a chunk is skipped only when all of its instances are outside the view.
  - Levels are shared geometries from finest to coarsest; a null level hides the chunk (0 triangles).
-   A chunk's level comes from the on-screen size of its largest feature at the chunk's nearest point; a
-   triangle budget then coarsens the farthest visible chunks first, but never more than one level below
-   what the chunk's on-screen size calls for (so near chunks never show facets). The budget is therefore
-   soft: a structure with more instances than even the coarsest level fits stays over it. Switching level
-   only swaps the geometry reference, so it can change every frame for free.
+   A chunk's level comes from the on-screen size of its largest feature at the chunk's nearest point, with
+   hysteresis (refine above a threshold +15%, coarsen below it -15%) so sizes near a threshold don't
+   flicker. Levels switch purely on what the view needs, never on camera motion. A triangle budget then
+   coarsens the farthest visible chunks first, but never more than one level below what the chunk's
+   on-screen size calls for (so near chunks never show facets); the budget is therefore soft. Switching
+   level only swaps the geometry reference, so it can change every frame for free.
 */
 import * as THREE from "three";
 
@@ -21,6 +22,9 @@ export interface Chunk {
   radius: number;
   /** World-space size (e.g. atom or bond radius) whose projection selects the level. */
   featureSize: number;
+  /** Level the view calls for (hysteresis state), before the budget. */
+  ideal: number;
+  /** Level currently drawn (ideal, possibly coarsened one step by the budget). */
   level: number;
 }
 
@@ -99,7 +103,7 @@ export function buildChunked(input: ChunkBuildInput): ChunkedInstances {
     mesh.computeBoundingSphere();
     mesh.raycast = () => {}; // hover picking uses its own grid
     group.add(mesh);
-    chunks.push({ mesh, center: mesh.boundingSphere!.center.clone(), radius: mesh.boundingSphere!.radius, featureSize: feature, level: coarsestDrawable });
+    chunks.push({ mesh, center: mesh.boundingSphere!.center.clone(), radius: mesh.boundingSphere!.radius, featureSize: feature, ideal: coarsestDrawable, level: coarsestDrawable });
   }
 
   return {
@@ -117,11 +121,10 @@ const projScreen = new THREE.Matrix4();
 const sphere = new THREE.Sphere();
 const camPos = new THREE.Vector3();
 
-/**
- * Pick each chunk's level for the current camera; returns true if any level changed.
- * `bias` coarsens everything by that many levels (used while the camera moves).
- */
-export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewportHeightPx: number, triangleBudget: number, bias = 0): boolean {
+const HYSTERESIS = 0.15;
+
+/** Pick each chunk's level for the current camera; returns true if any level changed. */
+export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewportHeightPx: number, triangleBudget: number): boolean {
   const last = set.levels.length - 1;
   camPos.setFromMatrixPosition(camera.matrixWorld);
   projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -138,9 +141,12 @@ export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewpo
     if (!frustum.intersectsSphere(sphere)) continue; // Three.js culls it; it costs nothing
     const dist = Math.max(1e-3, sphere.center.distanceTo(camPos) - sphere.radius); // nearest point of the chunk
     const px = persp.isPerspectiveCamera ? (chunk.featureSize * focalPx) / dist : chunk.featureSize * focalPx;
-    let level = set.levelMinPx.findIndex((minPx) => px >= minPx);
-    if (level < 0) level = last;
-    level = Math.min(last, level + bias);
+    // Hysteresis on the ideal level (not the drawn one, or the budget would fight it every frame):
+    // refine only well above a threshold, coarsen only well below
+    let level = Math.min(chunk.ideal, last);
+    while (level > 0 && px >= set.levelMinPx[level - 1]! * (1 + HYSTERESIS)) level--;
+    while (level < last && px < set.levelMinPx[level]! * (1 - HYSTERESIS)) level++;
+    chunk.ideal = level;
     // The budget may coarsen by at most one level: beyond that, facets or gaps would show
     visible.push({ chunk, dist, level, maxLevel: Math.min(last, level + 1) });
     total += chunk.mesh.count * set.levelTriangles[level]!;
