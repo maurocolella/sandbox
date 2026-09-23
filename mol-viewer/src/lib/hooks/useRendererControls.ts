@@ -31,6 +31,7 @@ export interface RendererControls {
     probeRadius: number;
     voxelSize: number;
     wireframe: boolean;
+    opacity: number;
   };
   style: {
     // materialKind: MaterialKind;
@@ -96,6 +97,7 @@ export function useRendererControls(): RendererControls {
       probeRadius: { value: 1.4, min: 0.5, max: 3.0, step: 0.1 },
       voxelSize: { value: 0.5, min: 0.25, max: 2.0, step: 0.05 },
       wireframe: { value: false },
+      opacity: { value: 1, min: 0.05, max: 1, step: 0.05 },
     },
     { collapsed: true }
   );
@@ -169,6 +171,7 @@ export function useRendererControls(): RendererControls {
       probeRadius: Number(surface.probeRadius),
       voxelSize: Number(surface.voxelSize),
       wireframe: Boolean(surface.wireframe),
+      opacity: Number(surface.opacity),
     },
     style: {
       // materialKind: style.materialKind as MaterialKind,

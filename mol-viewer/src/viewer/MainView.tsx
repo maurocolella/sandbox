@@ -145,6 +145,7 @@ export function MainView() {
             visibleChains={selectedChainIndices}
             surfaceData={surfaceData}
             surfaceWireframe={surface.wireframe}
+            surfaceOpacity={surface.opacity}
           />
         </Suspense>
       </div>

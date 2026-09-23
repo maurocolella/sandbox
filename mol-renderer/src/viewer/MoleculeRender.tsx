@@ -30,6 +30,7 @@ interface MoleculeRenderProps {
   visibleChains: number[];
   surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
   surfaceWireframe?: boolean;
+  surfaceOpacity?: number; // 0..1, 1 = opaque
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
@@ -136,7 +137,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <Preload all />
       <Suspense fallback={null}>
         <group>
-          <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} />
+          <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
