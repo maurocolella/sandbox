@@ -23,12 +23,11 @@ function cacheKey(rep: "ribbon-tube" | "ribbon-flat", materialKind: AtomMeshOpti
 function buildRibbon(
   scene: MolScene,
   rep: "ribbon-tube" | "ribbon-flat",
-  materialKind: AtomMeshOptions["materialKind"],
-  thickness?: number
+  materialKind: AtomMeshOptions["materialKind"]
 ): Group | null {
   const group = rep === "ribbon-tube"
     ? makeRibbonMesh(scene, { radius: 0.4, radialSegments: 12, tubularSegmentsPerPoint: 6, materialKind, color: 0xffffff })
-    : makeFlatRibbonMesh(scene, { width: 1.2, segmentsPerPoint: 6, materialKind, color: 0xffffff, doubleSided: false, thickness });
+    : makeFlatRibbonMesh(scene, { materialKind });
   if (!group) return null;
   // Enforce front-side materials
   group.traverse((obj) => {
@@ -55,7 +54,7 @@ export function useRibbonGroup(
     const key = cacheKey(representation, materialKind, params.thickness);
     const hit = cache.get(key);
     if (hit) return hit;
-    const grp = buildRibbon(scene, representation, materialKind, params.thickness);
+    const grp = buildRibbon(scene, representation, materialKind);
     cache.set(key, grp);
     return grp;
   }, [scene, representation, materialKind, params.thickness]);
@@ -72,7 +71,7 @@ export function useRibbonGroup(
       for (const rep of otherKinds) {
         const key = cacheKey(rep, materialKind, params.thickness);
         if (!cache.has(key)) {
-          const grp = buildRibbon(scene, rep, materialKind, params.thickness);
+          const grp = buildRibbon(scene, rep, materialKind);
           cache.set(key, grp);
         }
       }

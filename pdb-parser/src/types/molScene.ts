@@ -20,6 +20,7 @@ export interface MolScene {
     positions: Float32Array; // concatenated polyline points
     segments: Uint32Array;   // pairs [startIndex, endIndexExclusive] per segment
     residueOfPoint?: Uint32Array; // per polyline point, the residue index used to place it
+    orientation?: Float32Array; // per polyline point, unit CA->O (carbonyl) vector guiding cartoon orientation; zero when unknown
   };
   tables?: {
     chains?: { id: string }[];

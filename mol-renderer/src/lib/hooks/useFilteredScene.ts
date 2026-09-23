@@ -128,7 +128,9 @@ export function useFilteredScene(scene: MolScene | null, selectedChainIndices: n
       const srcPos = scene.backbone.positions;
       const srcSeg = scene.backbone.segments;
       const srcRes = scene.backbone.residueOfPoint;
+      const srcOri = scene.backbone.orientation;
       const posOut: number[] = [];
+      const oriOut: number[] = [];
       const segOut: number[] = [];
       const resOut: number[] = [];
       let writeBase = 0;
@@ -142,6 +144,7 @@ export function useFilteredScene(scene: MolScene | null, selectedChainIndices: n
           const rc = ri >= 0 ? residueToChain[ri]! : -1;
           if (rc >= 0 && selected.has(rc)) {
             posOut.push(srcPos[i * 3]!, srcPos[i * 3 + 1]!, srcPos[i * 3 + 2]!);
+            if (srcOri) oriOut.push(srcOri[i * 3]!, srcOri[i * 3 + 1]!, srcOri[i * 3 + 2]!);
             if (srcRes) resOut.push(ri);
             kept++;
           }
@@ -152,6 +155,7 @@ export function useFilteredScene(scene: MolScene | null, selectedChainIndices: n
         } else {
           // rollback partial writes if fewer than 2 kept
           posOut.length = base * 3;
+          oriOut.length = srcOri ? base * 3 : 0;
           if (srcRes) resOut.length = base;
         }
       }
@@ -160,6 +164,7 @@ export function useFilteredScene(scene: MolScene | null, selectedChainIndices: n
           positions: Float32Array.from(posOut),
           segments: Uint32Array.from(segOut),
           residueOfPoint: scene.backbone.residueOfPoint && resOut.length > 0 ? Uint32Array.from(resOut) : undefined,
+          orientation: srcOri ? Float32Array.from(oriOut) : undefined,
         };
       }
     }

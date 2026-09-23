@@ -130,7 +130,9 @@ export function subsetMolSceneByChains(scene: MolScene, includeChains: number[])
     const posOld = scene.backbone.positions;
     const segOld = scene.backbone.segments;
     const resOfPtOld = scene.backbone.residueOfPoint;
+    const oriOld = scene.backbone.orientation;
     const pts: number[] = [];
+    const ori: number[] = [];
     const resOfPt: number[] = [];
     const seg: number[] = [];
 
@@ -145,6 +147,7 @@ export function subsetMolSceneByChains(scene: MolScene, includeChains: number[])
           if (runStart == null) runStart = pts.length / 3;
           const idx = i * 3;
           pts.push(posOld[idx]!, posOld[idx + 1]!, posOld[idx + 2]!);
+          if (oriOld) ori.push(oriOld[idx]!, oriOld[idx + 1]!, oriOld[idx + 2]!);
           resOfPt.push(keptRi);
         } else if (runStart != null) {
           const runEnd = pts.length / 3;
@@ -162,6 +165,7 @@ export function subsetMolSceneByChains(scene: MolScene, includeChains: number[])
         positions: new Float32Array(pts),
         segments: new Uint32Array(seg),
         residueOfPoint: new Uint32Array(resOfPt),
+        orientation: oriOld ? new Float32Array(ori) : undefined,
       };
     }
   }

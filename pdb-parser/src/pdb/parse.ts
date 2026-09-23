@@ -195,8 +195,8 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
   const conectPairs = new Map<string, number>();
   const atomSerialsSeen = new Set<number>();
 
-  const helixRaw: Array<{ chainID: string; startSeq: number; endSeq: number }> = [];
-  const sheetRaw: Array<{ chainID: string; startSeq: number; endSeq: number }> = [];
+  const helixRaw: SecondarySpanRaw[] = [];
+  const sheetRaw: SecondarySpanRaw[] = [];
 
   let modelCount = 0;
   let currentModel: number | null = null;
@@ -270,7 +270,7 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
       const initSeq = parseIntSafe(slice(line, 21, 26)) ?? 0;
       const endChain = slice(line, 31, 32).trim() || initChain;
       const endSeq = parseIntSafe(slice(line, 33, 38)) ?? initSeq;
-      helixRaw.push({ chainID: initChain || endChain, startSeq: initSeq, endSeq });
+      helixRaw.push({ chainID: initChain || endChain, startSeq: initSeq, startICode: slice(line, 25, 26).trim(), endSeq, endICode: slice(line, 37, 38).trim() });
       continue;
     }
 
@@ -279,7 +279,7 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
       const initSeq = parseIntSafe(slice(line, 22, 27)) ?? parseIntSafe(slice(line, 21, 26)) ?? 0;
       const endChain = (slice(line, 32, 33).trim() || initChain);
       const endSeq = parseIntSafe(slice(line, 33, 38)) ?? initSeq;
-      sheetRaw.push({ chainID: initChain || endChain, startSeq: initSeq, endSeq });
+      sheetRaw.push({ chainID: initChain || endChain, startSeq: initSeq, startICode: slice(line, 26, 27).trim(), endSeq, endICode: slice(line, 37, 38).trim() });
       continue;
     }
 
@@ -327,30 +327,14 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
   const residueToChainIndex: number[] = new Array(residues.length).fill(-1);
   for (let ai = 0; ai < count; ai++) { const ri = residueIndex[ai]!; if (residueToChainIndex[ri] === -1) residueToChainIndex[ri] = chainIndex[ai]!; }
 
-  let secondary: MolScene["tables"] extends undefined ? undefined : NonNullable<MolScene["tables"]>["secondary"] = undefined as any;
-  if (helixRaw.length || sheetRaw.length) {
-    const out: { kind: "helix" | "sheet"; chain: number; startResidue: number; endResidue: number }[] = [];
-    for (const h of helixRaw) {
-      const ci = chainIdToIndex.get(h.chainID); if (ci == null) continue;
-      let startRi: number | null = null; let endRi: number | null = null;
-      for (let ri = 0; ri < residues.length; ri++) { const r = residues[ri]!; const rChainIdx = residueToChainIndex[ri]; if (rChainIdx !== ci) continue; if (r.seq >= h.startSeq && startRi == null) startRi = ri; if (r.seq <= h.endSeq) endRi = ri; }
-      if (startRi != null && endRi != null && endRi >= startRi) out.push({ kind: "helix", chain: ci, startResidue: startRi, endResidue: endRi });
-    }
-    for (const s of sheetRaw) {
-      const ci = chainIdToIndex.get(s.chainID); if (ci == null) continue;
-      let startRi: number | null = null; let endRi: number | null = null;
-      for (let ri = 0; ri < residues.length; ri++) { const r = residues[ri]!; const rChainIdx = residueToChainIndex[ri]; if (rChainIdx !== ci) continue; if (r.seq >= s.startSeq && startRi == null) startRi = ri; if (r.seq <= s.endSeq) endRi = ri; }
-      if (startRi != null && endRi != null && endRi >= startRi) out.push({ kind: "sheet", chain: ci, startResidue: startRi, endResidue: endRi });
-    }
-    if (out.length) secondary = out;
-  }
+  const secondary = mapSecondarySpans(helixRaw, sheetRaw, residues, residueToChainIndex, chainIdToIndex);
 
   for (let ri = 0; ri < residues.length; ri++) { const ci = residueToChainIndex[ri]!; if (ci != null && ci >= 0) residues[ri]!.chain = ci; }
 
   const scene: MolScene = {
     atoms: { count, positions, radii, colors, element: elementCodes, chainIndex, residueIndex, serial, names },
     bonds,
-    backbone: backboneBuilt && { positions: backboneBuilt.positions, segments: backboneBuilt.segments, residueOfPoint: backboneBuilt.residueOfPoint },
+    backbone: backboneBuilt && { positions: backboneBuilt.positions, segments: backboneBuilt.segments, residueOfPoint: backboneBuilt.residueOfPoint, orientation: backboneBuilt.orientation },
     tables: { chains, residues, chainSegments: chainSegments.length ? chainSegments : undefined, secondary },
     bbox: count > 0 ? { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } : undefined,
     metadata: { warnings: W.toArray(), modelCount: Math.max(1, modelCount) }
@@ -408,6 +392,64 @@ function finalizeOpenChainSegments(
   }
 }
 
+interface SecondarySpanRaw { chainID: string; startSeq: number; startICode: string; endSeq: number; endICode: string }
+
+/**
+ * Resolve HELIX/SHEET record spans to residue index ranges.
+ * Endpoints are looked up by (chain, seq, iCode); the walk from the start stops at the end residue
+ * or as soon as numbering leaves the span, so later HETATM/water residues can never extend a span.
+ */
+function mapSecondarySpans(
+  helixRaw: SecondarySpanRaw[],
+  sheetRaw: SecondarySpanRaw[],
+  residues: NonNullable<NonNullable<MolScene["tables"]>["residues"]>,
+  residueToChainIndex: number[],
+  chainIdToIndex: Map<string, number>
+): NonNullable<MolScene["tables"]>["secondary"] {
+  if (!helixRaw.length && !sheetRaw.length) return undefined;
+
+  // Residue order per chain and (chain|seq|iCode) -> position in that order
+  const chainResidues: number[][] = [];
+  const posByKey = new Map<string, number>();
+  for (let ri = 0; ri < residues.length; ri++) {
+    const ci = residueToChainIndex[ri]!;
+    if (ci < 0) continue;
+    const list = chainResidues[ci] ?? (chainResidues[ci] = []);
+    const key = `${ci}|${residues[ri]!.seq}|${residues[ri]!.iCode ?? ""}`;
+    if (!posByKey.has(key)) posByKey.set(key, list.length);
+    list.push(ri);
+  }
+
+  const out: NonNullable<NonNullable<MolScene["tables"]>["secondary"]> = [];
+  const resolve = (span: SecondarySpanRaw, kind: "helix" | "sheet") => {
+    const ci = chainIdToIndex.get(span.chainID);
+    if (ci == null) return;
+    const list = chainResidues[ci];
+    if (!list) return;
+    let pos = posByKey.get(`${ci}|${span.startSeq}|${span.startICode}`);
+    if (pos == null) {
+      // Start residue absent (e.g. unmodelled): begin at the first residue inside the span
+      pos = list.findIndex((ri) => residues[ri]!.seq >= span.startSeq && residues[ri]!.seq <= span.endSeq);
+      if (pos < 0) return;
+    }
+    let last = pos;
+    for (let k = pos; k < list.length; k++) {
+      const r = residues[list[k]!]!;
+      if (r.seq > span.endSeq || r.seq < residues[list[pos]!]!.seq) break;
+      last = k;
+      if (r.seq === span.endSeq && (r.iCode ?? "") === span.endICode) break;
+    }
+    out.push({ kind, chain: ci, startResidue: list[pos]!, endResidue: list[last]! });
+  };
+  for (const h of helixRaw) resolve(h, "helix");
+  for (const sh of sheetRaw) resolve(sh, "sheet");
+  return out.length ? out : undefined;
+}
+
+// Consecutive trace atoms farther apart than this are a chain break (missing residues)
+const CA_GAP_SQ = 4.5 * 4.5;
+const P_GAP_SQ = 8.0 * 8.0;
+
 function buildBackbone(
   finalAtoms: AtomRecord[],
   residueKeyToIndex: Map<string, number>,
@@ -415,22 +457,23 @@ function buildBackbone(
   chainSegments: { chain: number; startResidue: number; endResidue: number }[],
   positions: Float32Array,
   residueIndex: Uint32Array
-): { positions: Float32Array; segments: Uint32Array; residueOfPoint: Uint32Array } | undefined {
-  const preferNames = new Set(["CA", "P"]);
-  // Map residueIndex -> representative atom index
-  const repByResidue = new Map<number, number>();
+): { positions: Float32Array; segments: Uint32Array; residueOfPoint: Uint32Array; orientation: Float32Array } | undefined {
+  // Per residue: trace atom (protein CA, else nucleic P) and carbonyl O for the peptide-plane orientation.
+  // Residues without CA/P (waters, ligands) are not part of the trace.
+  const residueCount = residueKeyToIndex.size;
+  const traceAtom = new Int32Array(residueCount).fill(-1);
+  const traceIsCA = new Uint8Array(residueCount);
+  const oxygenAtom = new Int32Array(residueCount).fill(-1);
   for (let i = 0; i < finalAtoms.length; i++) {
     const a = finalAtoms[i]!;
-    const rKey = `${a.chainID}|${a.resSeq}|${a.iCode || ""}|${a.resName}`;
-    const ri = residueKeyToIndex.get(rKey);
-    if (ri == null) continue;
+    const ri = residueIndex[i]!;
     const an = a.name.trim().toUpperCase();
-    const prev = repByResidue.get(ri);
-    if (!prev && preferNames.has(an)) {
-      repByResidue.set(ri, i);
-    } else if (prev == null && an.length > 0) {
-      // fallback: take the first encountered atom for that residue if no CA/P
-      repByResidue.set(ri, i);
+    if (an === "CA" && a.element === "C") {
+      if (!traceIsCA[ri]) { traceAtom[ri] = i; traceIsCA[ri] = 1; }
+    } else if (an === "P" && a.element === "P") {
+      if (traceAtom[ri] < 0) traceAtom[ri] = i;
+    } else if (an === "O" && oxygenAtom[ri] < 0) {
+      oxygenAtom[ri] = i;
     }
   }
 
@@ -455,29 +498,49 @@ function buildBackbone(
   }
 
   const pts: number[] = [];
+  const ori: number[] = [];
   const resOfPt: number[] = [];
   const segIndices: number[] = [];
+  let runStart = 0;
+  // Close the current run; runs shorter than 2 points are dropped
+  const closeRun = () => {
+    const runEnd = pts.length / 3;
+    if (runEnd - runStart >= 2) segIndices.push(runStart, runEnd);
+    else { pts.length = runStart * 3; ori.length = runStart * 3; resOfPt.length = runStart; }
+    runStart = pts.length / 3;
+  };
   for (const seg of segments) {
-    const start = seg.startResidue;
-    const end = seg.endResidue;
-    const segStart = pts.length / 3;
-    for (let ri = start; ri <= end; ri++) {
-      const ai = repByResidue.get(ri);
-      if (ai == null) continue;
-      const x = positions[ai * 3];
-      const y = positions[ai * 3 + 1];
-      const z = positions[ai * 3 + 2];
+    let prevAtom = -1;
+    for (let ri = seg.startResidue; ri <= seg.endResidue; ri++) {
+      const ai = traceAtom[ri]!;
+      if (ai < 0) continue;
+      const x = positions[ai * 3]!, y = positions[ai * 3 + 1]!, z = positions[ai * 3 + 2]!;
+      if (prevAtom >= 0) {
+        const dx = x - positions[prevAtom * 3]!, dy = y - positions[prevAtom * 3 + 1]!, dz = z - positions[prevAtom * 3 + 2]!;
+        if (dx * dx + dy * dy + dz * dz > (traceIsCA[ri] ? CA_GAP_SQ : P_GAP_SQ)) closeRun();
+      }
       pts.push(x, y, z);
       resOfPt.push(ri);
+      const oi = oxygenAtom[ri]!;
+      if (traceIsCA[ri] && oi >= 0) {
+        const ox = positions[oi * 3]! - x, oy = positions[oi * 3 + 1]! - y, oz = positions[oi * 3 + 2]! - z;
+        const len = Math.hypot(ox, oy, oz) || 1;
+        ori.push(ox / len, oy / len, oz / len);
+      } else {
+        ori.push(0, 0, 0);
+      }
+      prevAtom = ai;
     }
-    const segEnd = pts.length / 3;
-    if (segEnd - segStart >= 2) {
-      segIndices.push(segStart, segEnd);
-    }
+    closeRun();
   }
 
   if (pts.length < 6 || segIndices.length === 0) return undefined;
-  return { positions: new Float32Array(pts), segments: new Uint32Array(segIndices), residueOfPoint: new Uint32Array(resOfPt) };
+  return {
+    positions: new Float32Array(pts),
+    segments: new Uint32Array(segIndices),
+    residueOfPoint: new Uint32Array(resOfPt),
+    orientation: new Float32Array(ori),
+  };
 }
 
 function resolveAltLocs(atoms: AtomRecord[], policy: "all" | "occupancy", W: WarningCollector): AtomRecord[] {
@@ -686,8 +749,8 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
   const atomSerialsSeen = new Set<number>();
 
   // Secondary structure (HELIX/SHEET) raw collection (chainID + seq ranges)
-  const helixRaw: Array<{ chainID: string; startSeq: number; endSeq: number }> = [];
-  const sheetRaw: Array<{ chainID: string; startSeq: number; endSeq: number }> = [];
+  const helixRaw: SecondarySpanRaw[] = [];
+  const sheetRaw: SecondarySpanRaw[] = [];
 
   let modelCount = 0;
   let currentModel: number | null = null;
@@ -792,7 +855,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
       const initSeq = parseIntSafe(slice(line, 21, 26)) ?? 0;
       const endChain = slice(line, 31, 32).trim() || initChain;
       const endSeq = parseIntSafe(slice(line, 33, 38)) ?? initSeq;
-      helixRaw.push({ chainID: initChain || endChain, startSeq: initSeq, endSeq: endSeq });
+      helixRaw.push({ chainID: initChain || endChain, startSeq: initSeq, startICode: slice(line, 25, 26).trim(), endSeq, endICode: slice(line, 37, 38).trim() });
       continue;
     }
 
@@ -802,7 +865,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
       const initSeq = parseIntSafe(slice(line, 22, 27)) ?? parseIntSafe(slice(line, 21, 26)) ?? 0;
       const endChain = (slice(line, 32, 33).trim() || initChain);
       const endSeq = parseIntSafe(slice(line, 33, 38)) ?? initSeq;
-      sheetRaw.push({ chainID: initChain || endChain, startSeq: initSeq, endSeq: endSeq });
+      sheetRaw.push({ chainID: initChain || endChain, startSeq: initSeq, startICode: slice(line, 26, 27).trim(), endSeq, endICode: slice(line, 37, 38).trim() });
       continue;
     }
 
@@ -866,41 +929,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
     if (residueToChainIndex[ri] === -1) residueToChainIndex[ri] = chainIndex[ai]!
   }
 
-  // Map HELIX/SHEET raw spans to residue indices
-  let secondary: MolScene["tables"] extends undefined ? undefined : NonNullable<MolScene["tables"]>["secondary"] = undefined as any;
-  if (helixRaw.length || sheetRaw.length) {
-    const out: { kind: "helix" | "sheet"; chain: number; startResidue: number; endResidue: number }[] = [];
-    for (const h of helixRaw) {
-      const ci = chainIdToIndex.get(h.chainID);
-      if (ci == null) continue;
-      // Find first and last residue indices in this chain spanning seq numbers
-      let startRi: number | null = null;
-      let endRi: number | null = null;
-      for (let ri = 0; ri < residues.length; ri++) {
-        const r = residues[ri]!;
-        const rChainIdx = residueToChainIndex[ri];
-        if (rChainIdx !== ci) continue;
-        if (r.seq >= h.startSeq && startRi == null) startRi = ri;
-        if (r.seq <= h.endSeq) endRi = ri;
-      }
-      if (startRi != null && endRi != null && endRi >= startRi) out.push({ kind: "helix", chain: ci, startResidue: startRi, endResidue: endRi });
-    }
-    for (const s of sheetRaw) {
-      const ci = chainIdToIndex.get(s.chainID);
-      if (ci == null) continue;
-      let startRi: number | null = null;
-      let endRi: number | null = null;
-      for (let ri = 0; ri < residues.length; ri++) {
-        const r = residues[ri]!;
-        const rChainIdx = residueToChainIndex[ri];
-        if (rChainIdx !== ci) continue;
-        if (r.seq >= s.startSeq && startRi == null) startRi = ri;
-        if (r.seq <= s.endSeq) endRi = ri;
-      }
-      if (startRi != null && endRi != null && endRi >= startRi) out.push({ kind: "sheet", chain: ci, startResidue: startRi, endResidue: endRi });
-    }
-    if (out.length) secondary = out;
-  }
+  const secondary = mapSecondarySpans(helixRaw, sheetRaw, residues, residueToChainIndex, chainIdToIndex);
 
   // Attach chain index to residue table entries
   for (let ri = 0; ri < residues.length; ri++) {
@@ -915,6 +944,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
       positions: backboneBuilt.positions,
       segments: backboneBuilt.segments,
       residueOfPoint: backboneBuilt.residueOfPoint,
+      orientation: backboneBuilt.orientation,
     },
     tables: { chains, residues, chainSegments: chainSegments.length ? chainSegments : undefined, secondary },
     bbox: count > 0 ? { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } : undefined,
