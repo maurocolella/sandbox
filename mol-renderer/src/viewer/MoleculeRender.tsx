@@ -20,6 +20,7 @@ import { useHoverState } from "../lib/hooks/useHoverState";
 import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 import { GridRaycast, type BBox } from "./GridRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
+import { CameraLights } from "./CameraLights";
 
 interface MoleculeRenderProps {
   background: string;
@@ -32,7 +33,7 @@ interface MoleculeRenderProps {
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
-  const materialKind: "basic" | "lambert" | "standard" = "lambert";
+  const materialKind: "basic" | "lambert" | "standard" = "standard";
   const ribbonThickness = 0.18;
 
   // Filtered scene derived internally from scene + visibleChains
@@ -114,8 +115,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       onPointerLeave={handleCanvasPointerLeave}
     >
       <color attach="background" args={[props.background]} />
-      <ambientLight intensity={1.0} />
-      <directionalLight position={[5, 10, 5]} intensity={1.0} />
+      <CameraLights />
       <OrbitControls
         ref={(ctrl) => {
           // ctrl is OrbitControls from drei; store minimal fields we use

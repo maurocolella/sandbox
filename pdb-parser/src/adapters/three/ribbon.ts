@@ -50,7 +50,7 @@ export function makeRibbonMesh(scene: MolScene, opts: RibbonOptions = {}): THREE
   const makeMaterial = (hex: number): THREE.Material => {
     if (materialKind === "basic") return new THREE.MeshBasicMaterial({ color: hex });
     if (materialKind === "lambert") return new THREE.MeshLambertMaterial({ color: hex });
-    return new THREE.MeshStandardMaterial({ color: hex, metalness: 0.08, roughness: 0.72 });
+    return new THREE.MeshStandardMaterial({ color: hex, metalness: 0, roughness: 0.5 });
   };
   const getMaterialForChain = (chainIdx: number): THREE.Material => {
     const key = chainIdx >= 0 ? chainIdx : 0;
@@ -428,7 +428,7 @@ export function makeFlatRibbonMesh(scene: MolScene, opts: FlatRibbonOptions = {}
     ? new THREE.MeshBasicMaterial({ vertexColors: true })
     : materialKind === "lambert"
     ? new THREE.MeshLambertMaterial({ vertexColors: true })
-    : new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.0, roughness: 0.55 });
+    : new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0, roughness: 0.5 });
 
   const group = new THREE.Group();
   group.add(new THREE.Mesh(geom, mat));

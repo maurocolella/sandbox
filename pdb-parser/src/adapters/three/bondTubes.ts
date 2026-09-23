@@ -35,7 +35,7 @@ export function makeBondTubes(scene: MolScene, opts: BondTubeOptions = {}): THRE
       break;
     case "standard":
     default:
-      material = new THREE.MeshStandardMaterial({ color, metalness: 0.0, roughness: 0.8 });
+      material = new THREE.MeshStandardMaterial({ color, metalness: 0.0, roughness: 0.5 });
       break;
   }
 

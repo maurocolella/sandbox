@@ -40,7 +40,7 @@ export function makeAtomsMesh(scene: MolScene, opts: AtomMeshOptions = {}): THRE
       ? new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: useInstanceColors })
       : materialKind === "lambert"
         ? new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: useInstanceColors })
-        : new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0, roughness: 1, vertexColors: useInstanceColors });
+        : new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0, roughness: 0.5, vertexColors: useInstanceColors });
 
   const mesh = new THREE.InstancedMesh(geometry, material, count);
   const dummy = new THREE.Object3D();

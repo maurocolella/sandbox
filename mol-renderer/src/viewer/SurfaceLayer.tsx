@@ -68,8 +68,8 @@ export function SurfaceLayer({ data, wireframe }: { data: SurfaceData | null; wi
   const invalidate = useThree((s) => s.invalidate);
 
   const materials = useMemo(() => ({
-    // Offset the fill back so the wireframe drawn over it doesn't z-fight
-    mesh: new THREE.MeshStandardMaterial({ color: 0x77aaff, metalness: 0, roughness: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+    // A little sheen gives a silky rim without gloss; polygon offset keeps the wireframe from z-fighting
+    mesh: new THREE.MeshPhysicalMaterial({ color: 0x77aaff, metalness: 0, roughness: 0.6, sheen: 0.35, sheenRoughness: 0.5, sheenColor: 0xffffff, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
     line: new THREE.LineBasicMaterial({ color: 0x111111, depthWrite: false }),
   }), []);
   useEffect(() => () => { materials.mesh.dispose(); materials.line.dispose(); }, [materials]);
