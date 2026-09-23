@@ -1,5 +1,5 @@
 {
-  "installCommand": "pnpm -w install",
-  "buildCommand": "pnpm -w --filter mol-viewer build",
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter mol-viewer... build",
   "outputDirectory": "mol-viewer/dist"
 }
