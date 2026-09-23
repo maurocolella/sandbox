@@ -37,7 +37,7 @@ export function MainView() {
 
   const { scene, error, loading } = useMolScene(source.url, parseOptions);
   const sourceError = error && source.pdbId && /\b404\b/.test(error)
-    ? `No PDB-format file for ${source.pdbId} on RCSB: the entry may not exist, or may be distributed as mmCIF only.`
+    ? `No entry ${source.pdbId} on RCSB.`
     : error;
   const sourceHint = pending?.pdbId ? `RCSB entry ${pending.pdbId}` : undefined;
 

@@ -10,7 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "test:pdb": "vitest run tests/pdb-bulk.spec.ts",
-    "test:cif": "vitest run tests/cif-tokenize.spec.ts tests/cif-document.spec.ts"
+    "test:cif": "vitest run tests/cif-tokenize.spec.ts tests/cif-document.spec.ts tests/cif-load.spec.ts"
   },
   "dependencies": {
     "cif-parser": "workspace:*",

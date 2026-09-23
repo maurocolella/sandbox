@@ -22,6 +22,10 @@ importers:
   chem-surface: {}
 
   cif-parser:
+    dependencies:
+      pdb-parser:
+        specifier: workspace:*
+        version: link:../pdb-parser
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
@@ -118,6 +122,9 @@ importers:
       chem-surface:
         specifier: workspace:*
         version: link:../chem-surface
+      cif-parser:
+        specifier: workspace:*
+        version: link:../cif-parser
       leva:
         specifier: ^0.10.0
         version: 0.10.0(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)

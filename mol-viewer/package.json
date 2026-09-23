@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "pnpm exec vite",
     "build": "pnpm exec tsc -b && pnpm exec vite build",
@@ -11,15 +13,16 @@
     "preview": "pnpm exec vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^9.121.0",
+    "@react-three/fiber": "^9.0.0",
+    "chem-surface": "workspace:*",
+    "cif-parser": "workspace:*",
+    "leva": "^0.10.0",
+    "mol-renderer": "workspace:*",
+    "pdb-parser": "workspace:*",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "leva": "^0.10.0",
-    "pdb-parser": "workspace:*",
-    "mol-renderer": "workspace:*",
-    "chem-surface": "workspace:*",
-    "three": "^0.160.0",
-    "@react-three/fiber": "^9.0.0",
-    "@react-three/drei": "^9.121.0"
+    "three": "^0.160.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",

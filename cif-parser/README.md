@@ -2,7 +2,33 @@
 
 A minimal-dependency CIF, mmCIF and BinaryCIF reader for the browser and web workers. It works on bytes, can stream, and exposes data as columns. The design follows `whitepapers/mmcif-parser.md`.
 
-Status: **tokenizer, plus the document, category and column layer**. BinaryCIF decoding and the mmCIF-to-`MolScene` loader come next.
+Status: **tokenizer, document and column layer, and the mmCIF-to-`MolScene` loader**, which runs in a worker. BinaryCIF decoding comes next.
+
+## Loading mmCIF
+
+```ts
+import { loadMmcif, MmcifWorkerClient } from "cif-parser";
+import MmcifWorker from "cif-parser/worker?worker";    // Vite; any bundler's worker import works
+
+const scene = loadMmcif(bytes, { altLocPolicy: "occupancy", modelSelection: 1 });   // synchronous
+const client = new MmcifWorkerClient(() => new MmcifWorker());
+const scene2 = await client.load(bytes);                // off the main thread; the latest request wins
+```
+
+The semantics follow `whitepapers/mmcif-parser.md` §4:
+- **Chains and residues.** Chains are author chains (`auth_asym_id`). Residues are split on label chain, sequence number and insertion code, so ligands and waters are their own residues, and a microheterogeneous position stays one residue whose atoms keep their own residue names.
+- **Models and altlocs.** One model is loaded, the first by default. The `occupancy` policy keeps each residue's best conformer and never mixes two conformers; `all` keeps every conformer.
+- **Bonds**, in precedence order:
+  1. the file's `_chem_comp_bond` templates;
+  2. a distance heuristic for residues without a template;
+  3. peptide and nucleic polymer links;
+  4. `_struct_conn` covalent and disulfide links;
+  5. unannotated ligand links by distance.
+
+  Conformers never bond to each other, and metal coordination isn't drawn as a bond.
+- **Secondary structure** comes from `_struct_conf` and `_struct_sheet_range`. The backbone trace, with CA→O orientation, is shared with `pdb-parser`.
+- **Tolerant input.** It handles label-only or author-only files, a missing `type_symbol` (inferred from the atom name, with ions named after their residue), and files without `_atom_site`.
+- **Speed.** 3J3Q (2.44 M atoms) loads in 2.4 s and 36ZA (11.2 M atoms) in 12.8 s, including 2.5 M and 11.4 M bonds (`node bench/load.mjs`).
 
 ## Documents, categories and columns
 

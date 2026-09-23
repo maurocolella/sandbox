@@ -2,6 +2,7 @@ import type { MolScene } from "../types/molScene.js";
 import { WarningCollector } from "../utils/warnings.js";
 import { elementCodeFromSymbol, elementColorRGB, inferElementSymbol, vdwRadius, covalentRadius } from "../utils/elements.js";
 import { buildSceneIndex } from "../utils/buildIndex.js";
+import { buildBackboneTrace, type BackboneTrace } from "../utils/backbone.js";
 
 interface AtomRecord {
   serial: number;
@@ -322,7 +323,7 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
 
   const bonds = await constructBondsParallel(conectPairs, atomSerialsSeen, finalAtoms, bondPolicy, positions, W);
 
-  const backboneBuilt = buildBackbone(finalAtoms, residueKeyToIndex, chainIdToIndex, chainSegments, positions, residueIndex);
+  const backboneBuilt = buildBackbone(names, elementCodes, residueKeyToIndex, chainIdToIndex, chainSegments, positions, residueIndex);
 
   const residueToChainIndex: number[] = new Array(residues.length).fill(-1);
   for (let ai = 0; ai < count; ai++) { const ri = residueIndex[ai]!; if (residueToChainIndex[ri] === -1) residueToChainIndex[ri] = chainIndex[ai]!; }
@@ -446,39 +447,17 @@ function mapSecondarySpans(
   return out.length ? out : undefined;
 }
 
-// Consecutive trace atoms farther apart than this are a chain break (missing residues)
-const CA_GAP_SQ = 4.5 * 4.5;
-const P_GAP_SQ = 8.0 * 8.0;
-
 function buildBackbone(
-  finalAtoms: AtomRecord[],
+  names: string[],
+  elementCodes: Uint16Array,
   residueKeyToIndex: Map<string, number>,
   chainIdToIndex: Map<string, number>,
   chainSegments: { chain: number; startResidue: number; endResidue: number }[],
   positions: Float32Array,
   residueIndex: Uint32Array
-): { positions: Float32Array; segments: Uint32Array; residueOfPoint: Uint32Array; orientation: Float32Array } | undefined {
-  // Per residue: trace atom (protein CA, else nucleic P) and carbonyl O for the peptide-plane orientation.
-  // Residues without CA/P (waters, ligands) are not part of the trace.
-  const residueCount = residueKeyToIndex.size;
-  const traceAtom = new Int32Array(residueCount).fill(-1);
-  const traceIsCA = new Uint8Array(residueCount);
-  const oxygenAtom = new Int32Array(residueCount).fill(-1);
-  for (let i = 0; i < finalAtoms.length; i++) {
-    const a = finalAtoms[i]!;
-    const ri = residueIndex[i]!;
-    const an = a.name.trim().toUpperCase();
-    if (an === "CA" && a.element === "C") {
-      if (!traceIsCA[ri]) { traceAtom[ri] = i; traceIsCA[ri] = 1; }
-    } else if (an === "P" && a.element === "P") {
-      if (traceAtom[ri] < 0) traceAtom[ri] = i;
-    } else if (an === "O" && oxygenAtom[ri] < 0) {
-      oxygenAtom[ri] = i;
-    }
-  }
-
-  // If no chain segments detected, create per-chain segments spanning residue index range
-  let segments = chainSegments.slice();
+): BackboneTrace | undefined {
+  // If no chain segments detected (no TER records), create per-chain segments spanning residue index range
+  const segments = chainSegments.slice();
   if (segments.length === 0) {
     const minByChain = new Map<number, number>();
     const maxByChain = new Map<number, number>();
@@ -492,55 +471,10 @@ function buildBackbone(
       if (max == null || ri > max) maxByChain.set(ci, ri);
     }
     for (const [ci, minRi] of minByChain.entries()) {
-      const maxRi = maxByChain.get(ci)!;
-      segments.push({ chain: ci, startResidue: minRi, endResidue: maxRi });
+      segments.push({ chain: ci, startResidue: minRi, endResidue: maxByChain.get(ci)! });
     }
   }
-
-  const pts: number[] = [];
-  const ori: number[] = [];
-  const resOfPt: number[] = [];
-  const segIndices: number[] = [];
-  let runStart = 0;
-  // Close the current run; runs shorter than 2 points are dropped
-  const closeRun = () => {
-    const runEnd = pts.length / 3;
-    if (runEnd - runStart >= 2) segIndices.push(runStart, runEnd);
-    else { pts.length = runStart * 3; ori.length = runStart * 3; resOfPt.length = runStart; }
-    runStart = pts.length / 3;
-  };
-  for (const seg of segments) {
-    let prevAtom = -1;
-    for (let ri = seg.startResidue; ri <= seg.endResidue; ri++) {
-      const ai = traceAtom[ri]!;
-      if (ai < 0) continue;
-      const x = positions[ai * 3]!, y = positions[ai * 3 + 1]!, z = positions[ai * 3 + 2]!;
-      if (prevAtom >= 0) {
-        const dx = x - positions[prevAtom * 3]!, dy = y - positions[prevAtom * 3 + 1]!, dz = z - positions[prevAtom * 3 + 2]!;
-        if (dx * dx + dy * dy + dz * dz > (traceIsCA[ri] ? CA_GAP_SQ : P_GAP_SQ)) closeRun();
-      }
-      pts.push(x, y, z);
-      resOfPt.push(ri);
-      const oi = oxygenAtom[ri]!;
-      if (traceIsCA[ri] && oi >= 0) {
-        const ox = positions[oi * 3]! - x, oy = positions[oi * 3 + 1]! - y, oz = positions[oi * 3 + 2]! - z;
-        const len = Math.hypot(ox, oy, oz) || 1;
-        ori.push(ox / len, oy / len, oz / len);
-      } else {
-        ori.push(0, 0, 0);
-      }
-      prevAtom = ai;
-    }
-    closeRun();
-  }
-
-  if (pts.length < 6 || segIndices.length === 0) return undefined;
-  return {
-    positions: new Float32Array(pts),
-    segments: new Uint32Array(segIndices),
-    residueOfPoint: new Uint32Array(resOfPt),
-    orientation: new Float32Array(ori),
-  };
+  return buildBackboneTrace({ names, elementCodes, positions, residueIndex, residueCount: residueKeyToIndex.size, segments });
 }
 
 function resolveAltLocs(atoms: AtomRecord[], policy: "all" | "occupancy", W: WarningCollector): AtomRecord[] {
@@ -920,7 +854,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
   const bonds = constructBonds(conectPairs, atomSerialsSeen, finalAtoms, bondPolicy, positions, W);
 
   // Backbone polyline from CA/P with segment breaks from TER segmentation
-  const backboneBuilt = buildBackbone(finalAtoms, residueKeyToIndex, chainIdToIndex, chainSegments, positions, residueIndex);
+  const backboneBuilt = buildBackbone(names, elementCodes, residueKeyToIndex, chainIdToIndex, chainSegments, positions, residueIndex);
 
   // Build residue -> chainIndex map (first atom seen for that residue)
   const residueToChainIndex: number[] = new Array(residues.length).fill(-1);
