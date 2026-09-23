@@ -13,7 +13,7 @@ from .downloader import download_entries
 from .rcsb_client import RCSBClient
 from .sampling import sample_ids
 
-app = typer.Typer(add_completion=False, help="pdb-crawler CLI", rich_markup_mode=None)
+app = typer.Typer(add_completion=False, help="mol-crawler CLI", rich_markup_mode=None)
 
 
 def _read_ids_file(path: Path) -> List[str]:
@@ -135,12 +135,25 @@ def sample(
         fh.close()
 
 
+def _parse_rate(value: Optional[str]) -> Optional[float]:
+    """'2M' -> 2_000_000 bytes/s, '500k' -> 500_000; None/'' -> unlimited."""
+    if not value:
+        return None
+    v = value.strip().lower()
+    mult = {"k": 1e3, "m": 1e6, "g": 1e9}.get(v[-1], 1)
+    number = float(v[:-1] if v[-1] in "kmg" else v)
+    if number <= 0:
+        raise typer.BadParameter("max-rate must be positive")
+    return number * mult
+
+
 @app.command()
 def fetch(
     ids: str = typer.Option(..., help="Input file with IDs (comma/newline separated)"),
     out: str = typer.Option("downloads", help="Output directory for downloads"),
-    format: str = typer.Option("pdb", help="File format: cif or pdb"),
+    format: str = typer.Option("pdb", help="File format: pdb, cif, pdb.gz or cif.gz"),
     concurrency: str = typer.Option("auto", help="Positive int or 'auto' for 50% cores"),
+    max_rate: Optional[str] = typer.Option(None, help="Total bandwidth cap, e.g. 2M or 500k (bytes/s); default unlimited"),
     resume: bool = typer.Option(False, "--resume", "-r", is_flag=True, help="No effect on existing files (they are always skipped); included for consistency"),
     log_file: Optional[str] = typer.Option(None, help="Append JSON events to this file"),
 ) -> None:
@@ -152,10 +165,11 @@ def fetch(
         emit, fh = _make_event_emitter(log_path)
         id_list = _read_ids_file(ids_path)
         conc = _parse_concurrency(concurrency)
-        emit({"event": "download_start", "count": len(id_list), "out_dir": str(out_path), "format": format, "concurrency": ("auto" if conc is None else conc)})
+        rate = _parse_rate(max_rate)
+        emit({"event": "download_start", "count": len(id_list), "out_dir": str(out_path), "format": format, "concurrency": ("auto" if conc is None else conc), "max_bytes_per_second": rate})
         def on_event(ev: dict) -> None:
             emit(ev)
-        paths = await download_entries(id_list, out_dir=out_path, file_format=format, concurrency=conc, on_event=on_event)
+        paths = await download_entries(id_list, out_dir=out_path, file_format=format, concurrency=conc, on_event=on_event, max_bytes_per_second=rate)
         emit({"downloaded": len(paths), "out_dir": str(out_path)})
         if fh:
             fh.close()
@@ -168,7 +182,7 @@ def run_all(
     percent: float = typer.Option(..., min=0.0, max=100.0, help="Percent of IDs to sample"),
     work_dir: str = typer.Option("work", help="Directory for intermediate files"),
     out_dir: str = typer.Option("downloads", help="Output directory for downloads"),
-    format: str = typer.Option("pdb", help="File format: cif or pdb"),
+    format: str = typer.Option("pdb", help="File format: pdb, cif, pdb.gz or cif.gz"),
     seed: Optional[int] = typer.Option(None, help="Seed for reproducible sampling; omit for secure random"),
     page_size: int = typer.Option(1000, help="Pagination size for enumeration"),
     concurrency: str = typer.Option("auto", help="Positive int or 'auto' for 50% cores"),

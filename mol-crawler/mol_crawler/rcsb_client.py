@@ -13,7 +13,7 @@ SEARCH_ENDPOINT = "https://search.rcsb.org/rcsbsearch/v2/query?json"
 
 
 def _load_query_json(name: str) -> Dict:
-    with resources.files("pdb_crawler.queries").joinpath(name).open("r", encoding="utf-8") as f:
+    with resources.files("mol_crawler.queries").joinpath(name).open("r", encoding="utf-8") as f:
         return json.load(f)
 
 

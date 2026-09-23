@@ -2,6 +2,7 @@
 tm-align.rs/
 whitepapers/
 fixtures/pdb/
+fixtures/cif/
 mol-harness/scratch/
 
 ### Rust

@@ -252,7 +252,7 @@ describe("bulk-parse fixtures/pdb", () => {
   it("parses all .pdb files without throwing and passes semantic checks (two bond policies)", async () => {
     if (!existsSync(fixturesRoot)) {
       throw new Error(
-        `fixtures/pdb not found at ${fixturesRoot}. Download fixtures with pdb-crawler, or set PDB_FIXTURES.`,
+        `fixtures/pdb not found at ${fixturesRoot}. Download fixtures with mol-crawler, or set PDB_FIXTURES.`,
       );
     }
 
