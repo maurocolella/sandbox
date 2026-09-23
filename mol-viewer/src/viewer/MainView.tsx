@@ -108,8 +108,8 @@ export function MainView() {
     showBonds: display.bonds,
     showBackbone: display.backbone,
     radiusScale: spheres.radiusScale,
-    sphereDetail: spheres.sphereDetail,
-  }), [display.representation, display.atoms, display.bonds, display.backbone, spheres.radiusScale, spheres.sphereDetail]);
+    sphereTriangleBudget: spheres.triangleBudgetM * 1e6,
+  }), [display.representation, display.atoms, display.bonds, display.backbone, spheres.radiusScale, spheres.triangleBudgetM]);
 
   const overlayControls = useMemo<OverlayControls>(() => ({
     mode: (selection.mode === "none" ? "atom" : selection.mode) as "atom" | "residue" | "chain",
@@ -158,6 +158,7 @@ export function MainView() {
             <div className="text-xs">Atoms: {atomCount.toLocaleString()}</div>
             <div className="text-xs">Bonds: {bondCount.toLocaleString()}</div>
             {renderStats && <div className="text-xs">Triangles: {renderStats.triangles.toLocaleString()}</div>}
+            {renderStats && <div className="text-xs">Draw calls: {renderStats.drawCalls.toLocaleString()}</div>}
           </div>
         </div>
       )}

@@ -22,6 +22,7 @@ import { GridRaycast, type BBox } from "./GridRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
+import { InstancesLod } from "./InstancesLod";
 
 interface MoleculeRenderProps {
   background: string;
@@ -45,7 +46,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
 
   const objects = useSceneObjects(filteredScene, {
     atoms: props.renderControls.showAtoms && props.renderControls.renderMode === "spheres"
-      ? { sphereDetail: props.renderControls.sphereDetail, materialKind, radiusScale: props.renderControls.radiusScale }
+      ? { materialKind, radiusScale: props.renderControls.radiusScale }
       : false,
     bonds: props.renderControls.showBonds,
     backbone: props.renderControls.showBackbone && props.renderControls.renderMode === "spheres" ? {} : false,
@@ -79,7 +80,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     hoveredChain: props.overlayControls.mode === "chain" ? hoveredChain : -1,
     color: props.overlayControls.hoverTint,
     radiusScale: props.renderControls.radiusScale,
-    sphereDetail: props.renderControls.sphereDetail,
+    sphereDetail: 16,
     onTop: props.overlayControls.onTopHighlight,
   }, lookups);
 
@@ -96,15 +97,12 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     onOut();
   }, [onOut]);
 
-  // Ensure bonds/backbone do not steal pointer events; atoms drive hover state
+  // Ensure the backbone does not steal pointer events (chunked atoms/bonds disable raycasting themselves)
   useEffect(() => {
-    if (objects.bonds) {
-      (objects.bonds as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
-    }
     if (objects.backbone) {
       (objects.backbone as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
     }
-  }, [objects.bonds, objects.backbone]);
+  }, [objects.backbone]);
 
   const controlsRef = useRef<ControlsRef | null>(null);
   // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
@@ -146,7 +144,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
               {props.renderControls.showBonds && objects.bonds && (
-                <primitive key={keys.bonds} object={objects.bonds} />
+                <InstancesLod key={keys.bonds} set={objects.bonds} triangleBudget={props.renderControls.sphereTriangleBudget * 0.4} isCameraMovingRef={isCameraMoving} />
               )}
               {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
@@ -154,12 +152,14 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           {props.renderControls.renderMode === "spheres" && (
             <>
               {props.renderControls.showAtoms && objects.atoms && (
-                <primitive
+                <InstancesLod
                   key={keys.atoms}
-                  object={objects.atoms}
+                  set={objects.atoms}
+                  triangleBudget={props.renderControls.sphereTriangleBudget * 0.6}
+                  isCameraMovingRef={isCameraMoving}
                 />
               )}
-              {props.renderControls.showBonds && objects.bonds && <primitive key={keys.bonds} object={objects.bonds} />}
+              {props.renderControls.showBonds && objects.bonds && <InstancesLod key={keys.bonds} set={objects.bonds} triangleBudget={props.renderControls.sphereTriangleBudget * 0.4} isCameraMovingRef={isCameraMoving} />}
               {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
               {isSpheres && hoverAtomOverlay && (
                 <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />

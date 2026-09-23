@@ -1,10 +1,11 @@
 export type RenderRepresentation = "spheres" | "ribbon-tube" | "ribbon-flat";
 
-import type { InstancedMesh, Object3D, LineSegments, Mesh } from "three";
+import type { Object3D, LineSegments, Mesh } from "three";
+import type { ChunkedInstances } from "../lib/chunked";
 
 export interface RenderObjects {
-  atoms?: InstancedMesh;
-  bonds?: Object3D;
+  atoms?: ChunkedInstances;
+  bonds?: ChunkedInstances;
   backbone?: LineSegments;
   ribbon?: Object3D;
   surface?: Mesh;
@@ -16,7 +17,8 @@ export interface RenderControls {
   showBonds: boolean;
   showBackbone: boolean;
   radiusScale: number;
-  sphereDetail: number;
+  /** Upper bound on atom + bond triangles per frame (level of detail keeps within it; 60% atoms, 40% bonds). */
+  sphereTriangleBudget: number;
 }
 
 export interface OverlayControls {

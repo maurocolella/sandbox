@@ -39,7 +39,7 @@ export interface RendererControls {
     // metalShading: boolean;
   };
   spheres: {
-    sphereDetail: number;
+    triangleBudgetM: number;
     radiusScale: number;
   };
   // ribbon: {
@@ -115,11 +115,12 @@ export function useRendererControls(): RendererControls {
   const spheres = useControls(
     "Spheres",
     {
-      sphereDetail: {
-        value: 16,
-        min: 4,
-        max: 32,
-        step: 2,
+      // Level of detail keeps atom spheres within this many million triangles per frame
+      triangleBudgetM: {
+        value: 4,
+        min: 0.5,
+        max: 20,
+        step: 0.5,
         render: (get) => get("Display.representation") === "spheres",
       },
       radiusScale: {
@@ -179,7 +180,7 @@ export function useRendererControls(): RendererControls {
       // metalShading: Boolean(style.metalShading),
     },
     spheres: {
-      sphereDetail: Number(spheres.sphereDetail),
+      triangleBudgetM: Number(spheres.triangleBudgetM),
       radiusScale: Number(spheres.radiusScale),
     },
     // ribbon: {
