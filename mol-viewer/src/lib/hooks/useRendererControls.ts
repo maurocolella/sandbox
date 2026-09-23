@@ -1,13 +1,15 @@
 /*
  Title: useRendererControls
- Description: Centralizes all Leva control groups for the viewer (parsing, display, styling,
- spheres, ribbon, selection) and exposes a typed, convenient API for MoleculeView and others.
+ Description: Centralizes all Leva control groups for the viewer (parsing, display, surface, styling,
+ spheres, selection) and exposes a typed, convenient API for MoleculeView and others.
+ Controls the renderer no longer reads (material kind, metal shading, ribbon thickness) are commented out:
+ shading is fixed PBR with camera lights, and the cartoon uses PyMOL's dimensions.
 */
 import { useControls } from "leva";
 import type { ParseOptions } from "pdb-parser";
 
 export type Representation = "spheres" | "ribbon-tube" | "ribbon-flat";
-export type MaterialKind = "basic" | "lambert" | "standard";
+// export type MaterialKind = "basic" | "lambert" | "standard";
 export type SelectionMode = "none" | "atom" | "residue" | "chain";
 
 export interface RendererControls {
@@ -31,17 +33,17 @@ export interface RendererControls {
     wireframe: boolean;
   };
   style: {
-    materialKind: MaterialKind;
+    // materialKind: MaterialKind;
     background: string;
-    metalShading: boolean;
+    // metalShading: boolean;
   };
   spheres: {
     sphereDetail: number;
     radiusScale: number;
   };
-  ribbon: {
-    thickness: number;
-  };
+  // ribbon: {
+  //   thickness: number;
+  // };
   selection: {
     mode: SelectionMode;
     hoverTint: string;
@@ -90,7 +92,7 @@ export function useRendererControls(): RendererControls {
     "Surface",
     {
       enabled: { value: false },
-      kind: { value: "vdw", options: ["vdw", "sas", "ses"] as const },
+      kind: { value: "ses", options: ["vdw", "sas", "ses"] as const },
       probeRadius: { value: 1.4, min: 0.5, max: 3.0, step: 0.1 },
       voxelSize: { value: 0.5, min: 0.25, max: 2.0, step: 0.05 },
       wireframe: { value: false },
@@ -101,9 +103,9 @@ export function useRendererControls(): RendererControls {
   const style = useControls(
     "Styling",
     {
-      materialKind: { value: "lambert", options: ["basic", "lambert", "standard"] as const },
+      // materialKind: { value: "lambert", options: ["basic", "lambert", "standard"] as const },
       background: { value: "#111111" },
-      metalShading: { value: false },
+      // metalShading: { value: false },
     },
     { collapsed: true }
   );
@@ -128,18 +130,18 @@ export function useRendererControls(): RendererControls {
     }
   );
 
-  const ribbon = useControls(
-    "Ribbon",
-    {
-      thickness: {
-        value: 0.18,
-        min: 0.02,
-        max: 0.6,
-        step: 0.01,
-        render: (get) => get("Display.representation") === "ribbon-flat",
-      },
-    }
-  );
+  // const ribbon = useControls(
+  //   "Ribbon",
+  //   {
+  //     thickness: {
+  //       value: 0.18,
+  //       min: 0.02,
+  //       max: 0.6,
+  //       step: 0.01,
+  //       render: (get) => get("Display.representation") === "ribbon-flat",
+  //     },
+  //   }
+  // );
 
   const selection = useControls("Selection", {
     mode: { value: "residue", options: ["none", "atom", "residue", "chain"] as const },
@@ -169,17 +171,17 @@ export function useRendererControls(): RendererControls {
       wireframe: Boolean(surface.wireframe),
     },
     style: {
-      materialKind: style.materialKind as MaterialKind,
+      // materialKind: style.materialKind as MaterialKind,
       background: String(style.background),
-      metalShading: Boolean(style.metalShading),
+      // metalShading: Boolean(style.metalShading),
     },
     spheres: {
       sphereDetail: Number(spheres.sphereDetail),
       radiusScale: Number(spheres.radiusScale),
     },
-    ribbon: {
-      thickness: Number(ribbon.thickness),
-    },
+    // ribbon: {
+    //   thickness: Number(ribbon.thickness),
+    // },
     selection: {
       mode: selection.mode as SelectionMode,
       hoverTint: String(selection.hoverTint),
