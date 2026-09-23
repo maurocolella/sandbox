@@ -1,5 +1,5 @@
 {
-  "name": "pdb-harness",
+  "name": "mol-harness",
   "version": "0.1.0",
   "private": true,
   "description": "Corpus-scale validation of the structure loaders (PDB today; mmCIF and BinaryCIF next) against the harvested PDB archive.",

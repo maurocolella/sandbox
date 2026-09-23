@@ -1,0 +1,399 @@
+{
+ "gemmiVersion": "0.7.5",
+ "cases": {
+  "embedded_quote": {
+   "input": "data_x\n_a 'a dog's life'\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "'a dog's life'"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "quote_then_hash": {
+   "input": "data_x\n_a 'abc'#comment\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "'abc'"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "quoted_null": {
+   "input": "data_x\n_a '.'\n_b .\n_c '?'\n_d ?\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "'.'"
+       },
+       {
+        "tag": "_b",
+        "raw": "."
+       },
+       {
+        "tag": "_c",
+        "raw": "'?'"
+       },
+       {
+        "tag": "_d",
+        "raw": "?"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "text_leading_nl": {
+   "input": "data_x\n_a\n;\nline1\n  line2  \n;\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": ";\nline1\n  line2  \n;"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "text_same_line": {
+   "input": "data_x\n_a\n;line1\nline2\n;\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": ";line1\nline2\n;"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "text_crlf": {
+   "input": "data_x\r\n_a\r\n;line1\r\nline2\r\n;\r\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": ";line1\r\nline2\r\n;"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "text_close_nows": {
+   "input": "data_x\n_a\n;abc\n;_b 1\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:4:1(16): parse error"
+   }
+  },
+  "semicolon_midline": {
+   "input": "data_x\n_a ;abc\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": ";abc"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "hash_in_bare": {
+   "input": "data_x\n_a ab#c\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "ab#c"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "reserved_global": {
+   "input": "data_x\n_a global_\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2:3(10): parse error"
+   }
+  },
+  "reserved_datalike": {
+   "input": "data_x\n_a data_foo\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2:3(10): parse error"
+   }
+  },
+  "bracket_lead": {
+   "input": "data_x\n_a [abc]\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "[abc]"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "dollar_lead": {
+   "input": "data_x\n_a $abc\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2:3(10): parse error"
+   }
+  },
+  "case_tags": {
+   "input": "data_x\n_A.B 1\n_a.b 2\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:3 in data_x: duplicate tag _a.b"
+   }
+  },
+  "LOOP_upper": {
+   "input": "data_x\nLOOP_\n_a.x\n_a.y\n1 2 3 4\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "loop": [
+         "_a.x",
+         "_a.y"
+        ],
+        "raw": [
+         "1",
+         "2",
+         "3",
+         "4"
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "empty_loop": {
+   "input": "data_x\nloop_\n_a.x\n_a.y\n_b.z 1\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2:0(7): Wrong number of values in loop _*"
+   }
+  },
+  "loop_bad_count": {
+   "input": "data_x\nloop_\n_a.x\n_a.y\n1 2 3\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2:0(7): Wrong number of values in loop _a.*"
+   }
+  },
+  "no_trailing_nl": {
+   "input": "data_x\n_a 1",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "1"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "unterminated_text": {
+   "input": "data_x\n_a\n;abc\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:4:0(15): unterminated text field"
+   }
+  },
+  "bare_data_": {
+   "input": "data_\n_a 1\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": " ",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "1"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "missing_value": {
+   "input": "data_x\n_a\n_b 1\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2 in data_x: _a has no value"
+   }
+  },
+  "stop_": {
+   "input": "data_x\nloop_\n_a.x\n1 2\nstop_\n_b 1\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "loop": [
+         "_a.x"
+        ],
+        "raw": [
+         "1",
+         "2"
+        ]
+       },
+       {
+        "tag": "_b",
+        "raw": "1"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "triple_quote": {
+   "input": "data_x\n_a '''abc'''\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "'''abc'''"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "bom": {
+   "input": "﻿data_x\n_a 1\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:1:0(0): expected block header (data_)"
+   }
+  },
+  "tab_sep": {
+   "input": "data_x\n_a\t1\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "1"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "quote_eol_unclosed": {
+   "input": "data_x\n_a 'abc\n_b 1\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:2:7(14): unterminated 'string'"
+   }
+  },
+  "dup_tag": {
+   "input": "data_x\n_a 1\n_a 2\n",
+   "gemmi": {
+    "ok": false,
+    "error": "string:3 in data_x: duplicate tag _a"
+   }
+  },
+  "two_blocks": {
+   "input": "data_x\n_a 1\ndata_y\n_a 2\n",
+   "gemmi": {
+    "ok": true,
+    "blocks": [
+     {
+      "name": "x",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "1"
+       }
+      ]
+     },
+     {
+      "name": "y",
+      "items": [
+       {
+        "tag": "_a",
+        "raw": "2"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

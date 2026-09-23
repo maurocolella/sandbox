@@ -1,0 +1,44 @@
+id	group	property (verified 2026-09-23; see whitepapers/mmcif-parser.md §7)
+36ZA	scale	11,167,649 atoms; .cif 1.198 GB > V8 max string length; stream-only stress case
+9FQR	scale	4.53 M atoms
+8GLV	scale	3.97 M atoms
+3J3Q	scale	2,440,800 atoms; 1,356 chains; 3-char label_asym_id; 4,696-char line; asym_id_list in a text field
+4V9D	scale	292k atoms; 2-char chains; 2,278 metalc
+4V6X	scale	237k atoms; 2-char auth chain (Az); consolidated split entry; PDB bundle with chain-id map
+6QZP	scale	EM ribosome; altlocs A/B; no PDB file
+7K00	scale	149k atoms; insertion codes; 1,501 metalc; no PDB file
+4UDF	scale	326k rows; altlocs A,B,1,2; known Biopython failure
+5O61	scale	151k atoms; known Biopython failure
+2K9Q	models	NMR, 20 models x 2,522 atoms
+1D3Z	models	NMR, 10 models x 1,231 atoms, hydrogen-rich
+2KOX	models	640 models (787,840 rows)
+1HTQ	models	X-ray, 10 models, 978,720 rows; has a PDB twin
+4P3R	models	250 models; atom counts differ per model
+2AXD	models	atom counts per model 1,276 vs 1,277
+1CRR	models	model numbers start at 21
+1EJG	disorder	microheterogeneity (PRO/SER 22, ILE/LEU 25); altlocs A-C; mixed blank/non-blank altlocs
+3NIR	disorder	0.48 A; altlocs A-D; microheterogeneity; H atoms; atom_site_anisotrop
+4I39	disorder	altloc on every atom
+1K6P	disorder	numeric altloc ids 1/2
+1PPB	numbering	392 atoms with insertion codes A-H (chymotrypsin numbering)
+1IGY	numbering	insertion codes; branched glycans
+1KX5	numbering	residue numbers -73..73
+1O1Z	numbering	negative residue numbers
+1EHZ	chemistry	684 quoted primed atom names; no struct_conf/sheet; 47 metalc; text fields inside a loop; no embedded chem_comp_bond
+6VXX	chemistry	branched entities; glycan gets its own auth chain; 63 covale
+6XR8	chemistry	4 branched entities
+2RH1	syntax	'#' inside a quoted value
+7GSA	identifiers	5-character CCD id A1AA6
+8VF6	identifiers	5-character CCD id A1AAY; author ligand name differs (211); no PDB file
+9ZZW	identifiers	5-character CCD id A1C86
+1BY4	chemistry	32 Zn metalc; quoted primed atom names
+4HHB	canonical	4 auth chains, 14 label asyms; embedded chem_comp_bond; metal remediation categories
+3B61	model-type	CA-only X-ray, no secondary structure records
+3HQV	model-type	CA-only fiber diffraction
+1L2K	model-type	neutron; element D; altlocs
+1LZN	model-type	neutron; element D
+8ZZ8	model-type	PDB-IHM; no atom_site; 103,224 ihm_sphere_obj_site beads; 1,012 models
+8ZZ1	model-type	PDB-IHM (PDBDEV_00000001); no atom_site
+9A08	model-type	integrative; atom_site without auth_seq_id/auth_comp_id/auth_atom_id/ins code; ihm_model_id
+AF-P69905-F1	model-type	AlphaFold DB v6 (resolve via API); atom_site last; pLDDT in B and ma_qa_metric_local
+pdb_00001crn	identifiers	extended id; Beta Archive file has data_pdb_00001crn / _entry.id pdb_00001crn

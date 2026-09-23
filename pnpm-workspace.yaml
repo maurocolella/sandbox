@@ -3,7 +3,7 @@ packages:
   - mol-viewer
   - chem-surface
   - pdb-parser
-  - pdb-harness
+  - mol-harness
 
 onlyBuiltDependencies:
   - '@heroui/shared-utils'

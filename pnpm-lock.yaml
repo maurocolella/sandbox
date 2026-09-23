@@ -21,6 +21,19 @@ importers:
 
   chem-surface: {}
 
+  mol-harness:
+    dependencies:
+      pdb-parser:
+        specifier: workspace:*
+        version: link:../pdb-parser
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.20
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@20.19.20)(lightningcss@1.30.1)
+
   mol-renderer:
     dependencies:
       '@react-three/drei':
@@ -145,19 +158,6 @@ importers:
       vite:
         specifier: ^7.1.6
         version: 7.1.9(@types/node@20.19.20)(jiti@2.6.1)(lightningcss@1.30.1)
-
-  pdb-harness:
-    dependencies:
-      pdb-parser:
-        specifier: workspace:*
-        version: link:../pdb-parser
-    devDependencies:
-      '@types/node':
-        specifier: ^20.11.0
-        version: 20.19.20
-      vitest:
-        specifier: ^1.6.0
-        version: 1.6.1(@types/node@20.19.20)(lightningcss@1.30.1)
 
   pdb-parser:
     dependencies:

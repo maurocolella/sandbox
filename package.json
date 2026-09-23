@@ -11,7 +11,7 @@
     "mol-renderer",
     "chem-surface",
     "pdb-parser",
-    "pdb-harness"
+    "mol-harness"
   ],
   "scripts": {
     "build": "pnpm -r build",
@@ -21,7 +21,7 @@
     "dev:viewer": "pnpm -C mol-viewer dev",
     "dev:renderer": "pnpm -C mol-renderer dev",
     "test": "pnpm -r test",
-    "test:bulk": "pnpm --filter pdb-harness test",
+    "test:bulk": "pnpm --filter mol-harness test",
     "clean": "pnpm -r clean || true"
   },
   "devDependencies": {
