@@ -8,6 +8,8 @@ import { MoleculeRender } from "mol-renderer";
 import type { RenderControls, OverlayControls } from "mol-renderer";
 import * as THREE from "three";
 import { generateVDW, generateSAS, generateSES, type Atom } from "chem-surface";
+
+const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 import { Leva } from "leva";
 import { StructureControls } from "./StructureControls";
 
@@ -52,12 +54,16 @@ export function MainView() {
     const s = filteredScene;
     const n = s?.atoms?.count ?? 0;
     if (!s || n === 0) return [];
-    const out: Atom[] = new Array(n);
+    const out: Atom[] = [];
     const pos = s.atoms.positions as Float32Array;
     const rad = s.atoms.radii as Float32Array;
+    const residues = s.tables?.residues;
+    const residueIndex = s.atoms.residueIndex;
     for (let i = 0; i < n; i++) {
+      // Solvent is left out of surfaces, as in PyMOL
+      if (residues && residueIndex && SOLVENT.has(residues[residueIndex[i]!]?.name ?? "")) continue;
       const j = i * 3;
-      out[i] = { x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i] };
+      out.push({ x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i] });
     }
     return out;
   }, [filteredScene]);

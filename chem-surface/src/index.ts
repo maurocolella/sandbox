@@ -2,882 +2,428 @@ export type Vec3 = { x: number; y: number; z: number };
 export type Atom = Vec3 & { radius: number };
 
 export interface SurfaceOptions {
-  probeRadius?: number;
-  voxelSize?: number;
+  probeRadius?: number; // Å, default 1.4
+  voxelSize?: number; // grid spacing in Å, default 0.5 (coarsened automatically to respect maxGridPoints)
+  maxGridPoints?: number; // upper bound on grid nodes, default 8M
   signal?: AbortSignal;
-}
-
-// (removed per-triangle gradient orientation; consistent component orientation is used instead)
-
-function orientConsistentAndOutward(verts: Array<{ x: number; y: number; z: number }>, faces: number[], ps: ProteinSurfacePort): void {
-  const triCount = Math.floor(faces.length / 3);
-  if (triCount === 0) return;
-  type EdgeRec = { tri: number; u: number; v: number };
-  const edgeMap = new Map<string, EdgeRec[]>();
-  const k = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-  const addE = (tri: number, u: number, v: number) => {
-    const key = k(u, v);
-    let arr = edgeMap.get(key);
-    if (!arr) { arr = []; edgeMap.set(key, arr); }
-    arr.push({ tri, u, v });
-  };
-  for (let t = 0; t < triCount; t++) {
-    const i = t * 3;
-    const a = faces[i], b = faces[i + 1], c = faces[i + 2];
-    addE(t, a, b); addE(t, b, c); addE(t, c, a);
-  }
-  const neighbors: Array<Array<{ tri: number; sameDir: boolean }>> = Array.from({ length: triCount }, () => []);
-  for (const [, arr] of edgeMap) {
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        const e1 = arr[i], e2 = arr[j];
-        const sameDir = (e1.u === e2.u && e1.v === e2.v);
-        neighbors[e1.tri].push({ tri: e2.tri, sameDir });
-        neighbors[e2.tri].push({ tri: e1.tri, sameDir });
-      }
-    }
-  }
-  const visited = new Uint8Array(triCount);
-  const flip = new Uint8Array(triCount); // 0 keep, 1 flip
-  const queue: number[] = [];
-  // Helper to compute oriented normal for a triangle given current flip flag
-  function triNormal(t: number) {
-    const i = t * 3;
-    let a = faces[i], b = faces[i + 1], c = faces[i + 2];
-    if (flip[t]) { const tmp = b; b = c; c = tmp; }
-    const ax = verts[a].x, ay = verts[a].y, az = verts[a].z;
-    const bx = verts[b].x, by = verts[b].y, bz = verts[b].z;
-    const cx = verts[c].x, cy = verts[c].y, cz = verts[c].z;
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const acx = cx - ax, acy = cy - ay, acz = cz - az;
-    const nx = aby * acz - abz * acy;
-    const ny = abz * acx - abx * acz;
-    const nz = abx * acy - aby * acx;
-    const len = Math.hypot(nx, ny, nz);
-    return len > 0 ? { nx: nx / len, ny: ny / len, nz: nz / len, cx: (ax + bx + cx) / 3, cy: (ay + by + cy) / 3, cz: (az + bz + cz) / 3 } : { nx: 0, ny: 0, nz: 0, cx: (ax + bx + cx) / 3, cy: (ay + by + cy) / 3, cz: (az + bz + cz) / 3 };
-  }
-  const eps = 0.25;
-  for (let seed = 0; seed < triCount; seed++) {
-    if (visited[seed]) continue;
-    const comp: number[] = [];
-    visited[seed] = 1; flip[seed] = 0; queue.push(seed); comp.push(seed);
-    while (queue.length) {
-      const cur = queue.pop() as number;
-      for (const nb of neighbors[cur]) {
-        const desired = nb.sameDir ? (1 - flip[cur]) : flip[cur];
-        if (!visited[nb.tri]) {
-          visited[nb.tri] = 1; flip[nb.tri] = desired as 0 | 1; queue.push(nb.tri); comp.push(nb.tri);
-        }
-      }
-    }
-    // decide outward for this component
-    let probeTri = seed;
-    let orient = triNormal(probeTri);
-    const px = orient.cx + eps * orient.nx, py = orient.cy + eps * orient.ny, pz = orient.cz + eps * orient.nz;
-    const mx = orient.cx - eps * orient.nx, my = orient.cy - eps * orient.ny, mz = orient.cz - eps * orient.nz;
-    const insidePlus = sampleInside(ps, px, py, pz);
-    const insideMinus = sampleInside(ps, mx, my, mz);
-    const compFlip = (insidePlus && !insideMinus) ? 1 : 0;
-    // apply flips for this component
-    for (const t of comp) { if ((flip[t] ^ compFlip) & 1) { const i = t * 3; const tmp = faces[i + 1]; faces[i + 1] = faces[i + 2]; faces[i + 2] = tmp; } }
-  }
-}
-
-function orientFacesByAdjacency(faces: number[]): void {
-  const triCount = Math.floor(faces.length / 3);
-  if (triCount === 0) return;
-  type EdgeRec = { tri: number; u: number; v: number };
-  const edgeMap = new Map<string, EdgeRec[]>();
-  const key = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-  const addEdge = (tri: number, u: number, v: number) => {
-    const k = key(u, v);
-    let arr = edgeMap.get(k);
-    if (!arr) { arr = []; edgeMap.set(k, arr); }
-    arr.push({ tri, u, v });
-  };
-  for (let t = 0; t < triCount; t++) {
-    const i = t * 3;
-    const a = faces[i], b = faces[i + 1], c = faces[i + 2];
-    addEdge(t, a, b); addEdge(t, b, c); addEdge(t, c, a);
-  }
-  const neighbors: Array<Array<{ tri: number; sameDir: boolean }>> = Array.from({ length: triCount }, () => []);
-  for (const [, arr] of edgeMap) {
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        const e1 = arr[i], e2 = arr[j];
-        const sameDir = (e1.u === e2.u && e1.v === e2.v);
-        neighbors[e1.tri].push({ tri: e2.tri, sameDir });
-        neighbors[e2.tri].push({ tri: e1.tri, sameDir });
-      }
-    }
-  }
-  const visited = new Uint8Array(triCount);
-  const flip = new Uint8Array(triCount);
-  const queue: number[] = [];
-  for (let t = 0; t < triCount; t++) {
-    if (visited[t]) continue;
-    visited[t] = 1; flip[t] = 0; queue.push(t);
-    while (queue.length) {
-      const cur = queue.pop() as number;
-      const wantCurFlip = flip[cur];
-      for (const nb of neighbors[cur]) {
-        const desired = nb.sameDir ? (1 - wantCurFlip) : wantCurFlip;
-        if (!visited[nb.tri]) {
-          visited[nb.tri] = 1; flip[nb.tri] = desired as 0 | 1; queue.push(nb.tri);
-        }
-      }
-    }
-  }
-  // apply flips
-  for (let t = 0; t < triCount; t++) {
-    if (flip[t]) { const i = t * 3; const tmp = faces[i + 1]; faces[i + 1] = faces[i + 2]; faces[i + 2] = tmp; }
-  }
-}
-
-function ensureOutwardBySample(verts: Array<{ x: number; y: number; z: number }>, faces: number[], ps: ProteinSurfacePort): void {
-  const eps = 0.25;
-  for (let t = 0; t < faces.length; t += 3) {
-    const ia = faces[t], ib = faces[t + 1], ic = faces[t + 2];
-    const ax = verts[ia].x, ay = verts[ia].y, az = verts[ia].z;
-    const bx = verts[ib].x, by = verts[ib].y, bz = verts[ib].z;
-    const cx = verts[ic].x, cy = verts[ic].y, cz = verts[ic].z;
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const acx = cx - ax, acy = cy - ay, acz = cz - az;
-    const nx = aby * acz - abz * acy;
-    const ny = abz * acx - abx * acz;
-    const nz = abx * acy - aby * acx;
-    const len = Math.hypot(nx, ny, nz);
-    if (len < 1e-8) continue;
-    const ux = nx / len, uy = ny / len, uz = nz / len;
-    const cxm = (ax + bx + cx) / 3, cym = (ay + by + cy) / 3, czm = (az + bz + cz) / 3;
-    const px = cxm + eps * ux, py = cym + eps * uy, pz = czm + eps * uz;
-    const mx = cxm - eps * ux, my = cym - eps * uy, mz = czm - eps * uz;
-    const insidePlus = sampleInside(ps, px, py, pz);
-    const insideMinus = sampleInside(ps, mx, my, mz);
-    if (insidePlus && !insideMinus) {
-      // flip all triangles globally once
-      for (let k = 0; k < faces.length; k += 3) { const tmp = faces[k + 1]; faces[k + 1] = faces[k + 2]; faces[k + 2] = tmp; }
-    }
-    return;
-  }
-}
-
-// Remove degenerate or near-zero-area triangles to avoid shading artifacts
-function filterDegenerateFaces(verts: Array<{ x: number; y: number; z: number }>, faces: number[]): number[] {
-  const out: number[] = [];
-  for (let t = 0; t < faces.length; t += 3) {
-    const ia = faces[t], ib = faces[t + 1], ic = faces[t + 2];
-    if (ia === ib || ib === ic || ia === ic) continue;
-    const ax = verts[ia].x, ay = verts[ia].y, az = verts[ia].z;
-    const bx = verts[ib].x, by = verts[ib].y, bz = verts[ib].z;
-    const cx = verts[ic].x, cy = verts[ic].y, cz = verts[ic].z;
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const acx = cx - ax, acy = cy - ay, acz = cz - az;
-    const nx = aby * acz - abz * acy;
-    const ny = abz * acx - abx * acz;
-    const nz = abx * acy - aby * acx;
-    const area2 = nx * nx + ny * ny + nz * nz;
-    if (area2 <= 1e-10) continue; // very small in grid units
-    out.push(ia, ib, ic);
-  }
-  return out;
 }
 
 export interface SurfaceGeometry {
   positions: Float32Array;
   normals: Float32Array;
   indices?: Uint32Array;
-  atomIndex?: Uint32Array;
+  atomIndex?: Uint32Array; // nearest atom per vertex (by distance to its VDW sphere)
 }
 
-// Faithful port of 3Dmol.js ProteinSurface4 pipeline (structure, rounding, voxelization, EDT),
-// replacing only the final marching cubes triangulation with surface nets.
+// Pipeline: signed distance fields on a regular grid (negative inside), isosurface at 0 via surface nets.
+//  - VDW: min_i |p - c_i| - r_i
+//  - SAS: min_i |p - c_i| - (r_i + probe)
+//  - SES: probe - D(p), D = distance to the SAS exterior, propagated from exact SAS surface points;
+//         combined with the VDW field so the surface never cuts into an atom.
 
-class PointGrid {
-  data: Int32Array;
-  width: number;
-  height: number;
-  constructor(length: number, width: number, height: number) {
-    this.data = new Int32Array(length * width * height * 3);
-    this.width = width;
-    this.height = height;
-  }
-  set(x: number, y: number, z: number, pt: { ix: number; iy: number; iz: number }) {
-    const index = ((((x * this.width) + y) * this.height) + z) * 3;
-    this.data[index] = pt.ix; this.data[index + 1] = pt.iy; this.data[index + 2] = pt.iz;
-  }
-  get(x: number, y: number, z: number) {
-    const index = ((((x * this.width) + y) * this.height) + z) * 3;
-    return { ix: this.data[index], iy: this.data[index + 1], iz: this.data[index + 2] };
-  }
+const FAR = 1e4;
+
+interface Grid {
+  ox: number; oy: number; oz: number; // origin (Å)
+  h: number; // spacing (Å)
+  nx: number; ny: number; nz: number;
 }
 
-// Surface type parity with 3Dmol
-const SurfaceType = { VDW: 1, MS: 2, SAS: 3, SES: 4 } as const;
 
-// Ported core with integer grid and EDT
-class ProteinSurfacePort {
-  readonly INOUT = 1;
-  readonly ISDONE = 2;
-  readonly ISBOUND = 4;
-
-  ptranx = 0; ptrany = 0; ptranz = 0;
-  probeRadius = 1.4;
-  defaultScaleFactor = 2; // 0.5 Å
-  scaleFactor = this.defaultScaleFactor;
-
-  pHeight = 0; pWidth = 0; pLength = 0;
-  cutRadius = 0;
-  vpBits: Uint8Array | null = null;
-  vpDistance: Float64Array | null = null;
-  vpAtomID: Int32Array | null = null;
-
-  pminx = 0; pminy = 0; pminz = 0;
-  pmaxx = 0; pmaxy = 0; pmaxz = 0;
-
-  // caches keyed by scaled radius key string
-  depty: Record<string, Int32Array> = {};
-  widxz: Record<string, number> = {};
-
-  verts: Array<{ x: number; y: number; z: number; atomid?: number }> = [];
-  faces: number[] = [];
-
-  readonly nb = [
-    new Int32Array([1, 0, 0]), new Int32Array([-1, 0, 0]), new Int32Array([0, 1, 0]), new Int32Array([0, -1, 0]), new Int32Array([0, 0, 1]), new Int32Array([0, 0, -1]),
-    new Int32Array([1, 1, 0]), new Int32Array([1, -1, 0]), new Int32Array([-1, 1, 0]), new Int32Array([-1, -1, 0]),
-    new Int32Array([1, 0, 1]), new Int32Array([1, 0, -1]), new Int32Array([-1, 0, 1]), new Int32Array([-1, 0, -1]),
-    new Int32Array([0, 1, 1]), new Int32Array([0, 1, -1]), new Int32Array([0, -1, 1]), new Int32Array([0, -1, -1]),
-    new Int32Array([1, 1, 1]), new Int32Array([1, 1, -1]), new Int32Array([1, -1, 1]), new Int32Array([-1, 1, 1]),
-    new Int32Array([1, -1, -1]), new Int32Array([-1, -1, 1]), new Int32Array([-1, 1, -1]), new Int32Array([-1, -1, -1]),
-  ];
-
-  initparm(extent: number[][], btype: number, volumeEstimate: number) {
-    if (volumeEstimate > 1000000) this.scaleFactor = this.defaultScaleFactor / 2;
-    const margin = (1 / this.scaleFactor) * 5.5;
-    this.pminx = extent[0][0]; this.pmaxx = extent[1][0];
-    this.pminy = extent[0][1]; this.pmaxy = extent[1][1];
-    this.pminz = extent[0][2]; this.pmaxz = extent[1][2];
-    if (!btype) {
-      this.pminx -= margin; this.pminy -= margin; this.pminz -= margin;
-      this.pmaxx += margin; this.pmaxy += margin; this.pmaxz += margin;
-    } else {
-      this.pminx -= this.probeRadius + margin; this.pminy -= this.probeRadius + margin; this.pminz -= this.probeRadius + margin;
-      this.pmaxx += this.probeRadius + margin; this.pmaxy += this.probeRadius + margin; this.pmaxz += this.probeRadius + margin;
-    }
-    this.pminx = Math.floor(this.pminx * this.scaleFactor) / this.scaleFactor;
-    this.pminy = Math.floor(this.pminy * this.scaleFactor) / this.scaleFactor;
-    this.pminz = Math.floor(this.pminz * this.scaleFactor) / this.scaleFactor;
-    this.pmaxx = Math.ceil(this.pmaxx * this.scaleFactor) / this.scaleFactor;
-    this.pmaxy = Math.ceil(this.pmaxy * this.scaleFactor) / this.scaleFactor;
-    this.pmaxz = Math.ceil(this.pmaxz * this.scaleFactor) / this.scaleFactor;
-    this.ptranx = -this.pminx; this.ptrany = -this.pminy; this.ptranz = -this.pminz;
-    this.pLength = Math.ceil(this.scaleFactor * (this.pmaxx - this.pminx)) + 1;
-    this.pWidth = Math.ceil(this.scaleFactor * (this.pmaxy - this.pminy)) + 1;
-    this.pHeight = Math.ceil(this.scaleFactor * (this.pmaxz - this.pminz)) + 1;
-    this.cutRadius = this.probeRadius * this.scaleFactor;
-    this.vpBits = new Uint8Array(this.pLength * this.pWidth * this.pHeight);
-    this.vpDistance = new Float64Array(this.pLength * this.pWidth * this.pHeight);
-    this.vpAtomID = new Int32Array(this.pLength * this.pWidth * this.pHeight);
-  }
-
-  private radiusKey(r: number, btype: number) {
-    const scaled = (r + (btype ? this.probeRadius : 0)) * this.scaleFactor + 0.5;
-    return Math.round(scaled).toString();
-  }
-
-  private ensureRadiusTables(r: number, btype: number) {
-    const key = this.radiusKey(r, btype);
-    if (this.widxz[key] !== undefined) return key;
-    const tr = (r + (btype ? this.probeRadius : 0)) * this.scaleFactor + 0.5;
-    const sr = tr * tr;
-    const w = Math.floor(tr) + 1;
-    this.widxz[key] = w;
-    const dep = new Int32Array(w * w);
-    let idx = 0;
-    for (let j = 0; j < w; j++) {
-      for (let k = 0; k < w; k++) {
-        const txz = j * j + k * k;
-        if (txz > sr) dep[idx] = -1;
-        else dep[idx] = Math.floor(Math.sqrt(sr - txz));
-        idx++;
-      }
-    }
-    this.depty[key] = dep;
-    return key;
-  }
-
-  fillInit() {
-    if (!this.vpBits || !this.vpDistance || !this.vpAtomID) return;
-    for (let i = 0, il = this.vpBits.length; i < il; i++) {
-      this.vpBits[i] = 0; this.vpDistance[i] = -1.0; this.vpAtomID[i] = -1;
-    }
-  }
-
-  fillvoxels(atoms: Atom[]) {
-    if (!this.vpBits || !this.vpAtomID) return;
-    this.fillInit();
-    for (let ai = 0; ai < atoms.length; ai++) this.fillAtom(atoms[ai], atoms, ai);
-    for (let i = 0, il = this.vpBits.length; i < il; i++) if (this.vpBits[i] & this.INOUT) this.vpBits[i] |= this.ISDONE;
-  }
-
-  private fillAtom(atom: Atom, atoms: Atom[], atomIndex: number) {
-    if (!this.vpBits || !this.vpAtomID) return;
-    const cx = Math.floor(0.5 + this.scaleFactor * (atom.x + this.ptranx));
-    const cy = Math.floor(0.5 + this.scaleFactor * (atom.y + this.ptrany));
-    const cz = Math.floor(0.5 + this.scaleFactor * (atom.z + this.ptranz));
-    const key = this.ensureRadiusTables(atom.radius, 1); // SAS/MS inflate path
-    const w = this.widxz[key];
-    const dep = this.depty[key];
-    const pWH = this.pWidth * this.pHeight;
-    let nind = 0;
-    for (let i = 0; i < w; i++) {
-      for (let j = 0; j < w; j++) {
-        if (dep[nind] !== -1) {
-          for (let ii = -1; ii < 2; ii++) for (let jj = -1; jj < 2; jj++) for (let kk = -1; kk < 2; kk++) {
-            if (ii !== 0 && jj !== 0 && kk !== 0) {
-              const mi = ii * i, mk = kk * j;
-              for (let k = 0; k <= dep[nind]; k++) {
-                const mj = k * jj;
-                const si = cx + mi, sj = cy + mj, sk = cz + mk;
-                if (si < 0 || sj < 0 || sk < 0 || si >= this.pLength || sj >= this.pWidth || sk >= this.pHeight) continue;
-                const index = si * pWH + sj * this.pHeight + sk;
-                if (!(this.vpBits[index] & this.INOUT)) { this.vpBits[index] |= this.INOUT; this.vpAtomID[index] = atomIndex; }
-                else {
-                  const a2 = atoms[this.vpAtomID[index]]; if (a2) {
-                    const ox = cx + mi - Math.floor(0.5 + this.scaleFactor * (a2.x + this.ptranx));
-                    const oy = cy + mj - Math.floor(0.5 + this.scaleFactor * (a2.y + this.ptrany));
-                    const oz = cz + mk - Math.floor(0.5 + this.scaleFactor * (a2.z + this.ptranz));
-                    if (mi * mi + mj * mj + mk * mk < ox * ox + oy * oy + oz * oz) this.vpAtomID[index] = atomIndex;
-                  }
-                }
-              }
-            }
-          }
-        }
-        nind++;
-      }
-    }
-  }
-
-  fillvoxelswaals(atoms: Atom[]) {
-    if (!this.vpBits || !this.vpAtomID) return;
-    for (let i = 0, il = this.vpBits.length; i < il; i++) this.vpBits[i] &= ~this.ISDONE;
-    for (let ai = 0; ai < atoms.length; ai++) this.fillAtomWaals(atoms[ai], atoms, ai);
-  }
-
-  private fillAtomWaals(atom: Atom, atoms: Atom[], atomIndex: number) {
-    if (!this.vpBits || !this.vpAtomID) return;
-    const cx = Math.floor(0.5 + this.scaleFactor * (atom.x + this.ptranx));
-    const cy = Math.floor(0.5 + this.scaleFactor * (atom.y + this.ptrany));
-    const cz = Math.floor(0.5 + this.scaleFactor * (atom.z + this.ptranz));
-    const key = this.ensureRadiusTables(atom.radius, 0);
-    const w = this.widxz[key];
-    const dep = this.depty[key];
-    const pWH = this.pWidth * this.pHeight;
-    let nind = 0;
-    for (let i = 0; i < w; i++) {
-      for (let j = 0; j < w; j++) {
-        if (dep[nind] !== -1) {
-          for (let ii = -1; ii < 2; ii++) for (let jj = -1; jj < 2; jj++) for (let kk = -1; kk < 2; kk++) {
-            if (ii !== 0 && jj !== 0 && kk !== 0) {
-              const mi = ii * i, mk = kk * j;
-              for (let k = 0; k <= dep[nind]; k++) {
-                const mj = k * jj;
-                const si = cx + mi, sj = cy + mj, sk = cz + mk;
-                if (si < 0 || sj < 0 || sk < 0 || si >= this.pLength || sj >= this.pWidth || sk >= this.pHeight) continue;
-                const index = si * pWH + sj * this.pHeight + sk;
-                if (!(this.vpBits[index] & this.ISDONE)) { this.vpBits[index] |= this.ISDONE; this.vpAtomID[index] = atomIndex; }
-                else {
-                  const a2 = atoms[this.vpAtomID[index]]; if (a2) {
-                    const ox = cx + mi - Math.floor(0.5 + this.scaleFactor * (a2.x + this.ptranx));
-                    const oy = cy + mj - Math.floor(0.5 + this.scaleFactor * (a2.y + this.ptrany));
-                    const oz = cz + mk - Math.floor(0.5 + this.scaleFactor * (a2.z + this.ptranz));
-                    if (mi * mi + mj * mj + mk * mk < ox * ox + oy * oy + oz * oz) this.vpAtomID[index] = atomIndex;
-                  }
-                }
-              }
-            }
-          }
-        }
-        nind++;
-      }
-    }
-  }
-
-  buildboundary() {
-    if (!this.vpBits) return;
-    const pWH = this.pWidth * this.pHeight;
-    for (let i = 0; i < this.pLength; i++) {
-      for (let j = 0; j < this.pHeight; j++) {
-        for (let k = 0; k < this.pWidth; k++) {
-          const index = i * pWH + k * this.pHeight + j;
-          if (this.vpBits[index] & this.INOUT) {
-            let ii = 0;
-            while (ii < 26) {
-              const ti = i + this.nb[ii][0], tj = j + this.nb[ii][2], tk = k + this.nb[ii][1];
-              if (ti > -1 && ti < this.pLength && tk > -1 && tk < this.pWidth && tj > -1 && tj < this.pHeight && !(this.vpBits[ti * pWH + tk * this.pHeight + tj] & this.INOUT)) {
-                this.vpBits[index] |= this.ISBOUND; break;
-              } else ii++;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  fastdistancemap() {
-    if (!this.vpBits || !this.vpDistance) return;
-    let boundPoint = new PointGrid(this.pLength, this.pWidth, this.pHeight);
-    const pWH = this.pWidth * this.pHeight;
-    const cutRSq = this.cutRadius * this.cutRadius;
-    let inarray: Array<{ ix: number; iy: number; iz: number }> = [];
-    let outarray: Array<{ ix: number; iy: number; iz: number }> = [];
-    let index = 0;
-    for (let i = 0; i < this.pLength; i++) {
-      for (let j = 0; j < this.pWidth; j++) {
-        for (let k = 0; k < this.pHeight; k++) {
-          index = i * pWH + j * this.pHeight + k;
-          this.vpBits[index] &= ~this.ISDONE;
-          if (this.vpBits[index] & this.INOUT) {
-            if (this.vpBits[index] & this.ISBOUND) {
-              const triple = { ix: i, iy: j, iz: k };
-              boundPoint.set(i, j, k, triple);
-              inarray.push(triple);
-              this.vpDistance[index] = 0;
-              this.vpBits[index] |= this.ISDONE;
-              this.vpBits[index] &= ~this.ISBOUND;
-            }
-          }
-        }
-      }
-    }
-    do {
-      outarray = this.fastoneshell(inarray, boundPoint);
-      inarray = [];
-      for (let i = 0, n = outarray.length; i < n; i++) {
-        index = pWH * outarray[i].ix + this.pHeight * outarray[i].iy + outarray[i].iz;
-        this.vpBits[index] &= ~this.ISBOUND;
-        if (this.vpDistance[index] <= 1.0404 * cutRSq) {
-          inarray.push({ ix: outarray[i].ix, iy: outarray[i].iy, iz: outarray[i].iz });
-        }
-      }
-    } while (inarray.length !== 0);
-    inarray = []; outarray = []; boundPoint = null as unknown as PointGrid;
-    let cutsf = this.scaleFactor - 0.5; if (cutsf < 0) cutsf = 0;
-    const cutoff = cutRSq - 0.50 / (0.1 + cutsf);
-    for (let i = 0; i < this.pLength; i++) {
-      for (let j = 0; j < this.pWidth; j++) {
-        for (let k = 0; k < this.pHeight; k++) {
-          index = i * pWH + j * this.pHeight + k;
-          this.vpBits[index] &= ~this.ISBOUND;
-          if (this.vpBits[index] & this.INOUT) {
-            if (!(this.vpBits[index] & this.ISDONE) || ((this.vpBits[index] & this.ISDONE) && (this.vpDistance[index] >= cutoff))) {
-              this.vpBits[index] |= this.ISBOUND;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  private fastoneshell(inarray: Array<{ ix: number; iy: number; iz: number }>, boundPoint: PointGrid) {
-    const outarray: Array<{ ix: number; iy: number; iz: number }> = [];
-    if (inarray.length === 0) return outarray;
-    const pWH = this.pWidth * this.pHeight;
-    for (let i = 0, n = inarray.length; i < n; i++) {
-      let tx = inarray[i].ix, ty = inarray[i].iy, tz = inarray[i].iz;
-      let bp = boundPoint.get(tx, ty, tz);
-      for (let j = 0; j < 26; j++) {
-        const tnx = tx + this.nb[j][0], tny = ty + this.nb[j][1], tnz = tz + this.nb[j][2];
-        if (tnx < this.pLength && tnx > -1 && tny < this.pWidth && tny > -1 && tnz < this.pHeight && tnz > -1) {
-          const index = tnx * pWH + this.pHeight * tny + tnz;
-          if ((this.vpBits![index] & this.INOUT) && !(this.vpBits![index] & this.ISDONE)) {
-            boundPoint.set(tnx, tny, tz + this.nb[j][2], bp);
-            const dx = tnx - bp.ix, dy = tny - bp.iy, dz = tnz - bp.iz;
-            const square = dx * dx + dy * dy + dz * dz;
-            this.vpDistance![index] = square; this.vpBits![index] |= this.ISDONE; this.vpBits![index] |= this.ISBOUND;
-            outarray.push({ ix: tnx, iy: tny, iz: tnz });
-          } else if ((this.vpBits![index] & this.INOUT) && (this.vpBits![index] & this.ISDONE)) {
-            const dx = tnx - bp.ix, dy = tny - bp.iy, dz = tnz - bp.iz;
-            const square = dx * dx + dy * dy + dz * dz;
-            if (square < this.vpDistance![index]) {
-              boundPoint.set(tnx, tny, tnz, bp);
-              this.vpDistance![index] = square;
-              if (!(this.vpBits![index] & this.ISBOUND)) { this.vpBits![index] |= this.ISBOUND; outarray.push({ ix: tnx, iy: tny, iz: tnz }); }
-            }
-          }
-        }
-      }
-    }
-    return outarray;
-  }
-
-  initSurfaceField(stype: number) {
-    if (!this.vpBits) return;
-    for (let i = 0, lim = this.vpBits.length; i < lim; i++) {
-      if (stype === SurfaceType.VDW) {
-        this.vpBits[i] &= ~this.ISBOUND;
-      } else if (stype === SurfaceType.SES) {
-        this.vpBits[i] &= ~this.ISDONE; if (this.vpBits[i] & this.ISBOUND) this.vpBits[i] |= this.ISDONE; this.vpBits[i] &= ~this.ISBOUND;
-      } else if (stype === SurfaceType.MS) {
-        if ((this.vpBits[i] & this.ISBOUND) && (this.vpBits[i] & this.ISDONE)) this.vpBits[i] &= ~this.ISBOUND;
-        else if ((this.vpBits[i] & this.ISBOUND) && !(this.vpBits[i] & this.ISDONE)) this.vpBits[i] |= this.ISDONE;
-      } else if (stype === SurfaceType.SAS) {
-        this.vpBits[i] &= ~this.ISBOUND;
-      }
-    }
-  }
+function checkAbort(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("Surface generation aborted", "AbortError");
 }
 
-function orientQuadsGrid(verts: Array<{ x: number; y: number; z: number }>, faces: number[], ps: ProteinSurfacePort): void {
-  for (let t = 0; t + 5 < faces.length; t += 6) {
-    const ia = faces[t], ib = faces[t + 1], ic = faces[t + 2];
-    const id = faces[t + 5];
-    const ax = verts[ia].x, ay = verts[ia].y, az = verts[ia].z;
-    const bx = verts[ib].x, by = verts[ib].y, bz = verts[ib].z;
-    const cx = verts[ic].x, cy = verts[ic].y, cz = verts[ic].z;
-    const dx = verts[id].x, dy = verts[id].y, dz = verts[id].z;
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const acx = cx - ax, acy = cy - ay, acz = cz - az;
-    const nx = aby * acz - abz * acy;
-    const ny = abz * acx - abx * acz;
-    const nz = abx * acy - aby * acx;
-    const nlen = Math.hypot(nx, ny, nz);
-    if (nlen < 1e-12) continue; // degenerate
-    const cxm = (ax + bx + cx + dx) * 0.25;
-    const cym = (ay + by + cy + dy) * 0.25;
-    const czm = (az + bz + cz + dz) * 0.25;
-    const g = gradientNormal(ps, cxm, cym, czm);
-    const dot = nx * g.nx + ny * g.ny + nz * g.nz;
-    if (dot < 0) {
-      const tmp1 = faces[t + 1]; faces[t + 1] = faces[t + 2]; faces[t + 2] = tmp1;
-      const tmp2 = faces[t + 4]; faces[t + 4] = faces[t + 5]; faces[t + 5] = tmp2;
-    }
-  }
-}
-
-// Helpers for orienting triangle winding outward using the voxel inside/outside field
-function gridIndex(ps: ProteinSurfacePort, i: number, j: number, k: number): number {
-  return (ps.pWidth * ps.pHeight) * i + ps.pHeight * j + k;
-}
-
-function sampleInside(ps: ProteinSurfacePort, x: number, y: number, z: number): boolean {
-  // Trilinear interpolation of inside field (ISDONE) at fractional grid coordinate (x,y,z)
-  const ix = Math.max(0, Math.min(ps.pLength - 2, Math.floor(x)));
-  const iy = Math.max(0, Math.min(ps.pWidth - 2, Math.floor(y)));
-  const iz = Math.max(0, Math.min(ps.pHeight - 2, Math.floor(z)));
-  const fx = Math.min(1, Math.max(0, x - ix));
-  const fy = Math.min(1, Math.max(0, y - iy));
-  const fz = Math.min(1, Math.max(0, z - iz));
-
-  const s = (i: number, j: number, k: number) => {
-    const bits = ps.vpBits![gridIndex(ps, i, j, k)];
-    return (bits & ps.INOUT) ? 1 : ((bits & ps.ISDONE) ? 1 : 0);
-  };
-
-  const s000 = s(ix, iy, iz);
-  const s100 = s(ix + 1, iy, iz);
-  const s010 = s(ix, iy + 1, iz);
-  const s110 = s(ix + 1, iy + 1, iz);
-  const s001 = s(ix, iy, iz + 1);
-  const s101 = s(ix + 1, iy, iz + 1);
-  const s011 = s(ix, iy + 1, iz + 1);
-  const s111 = s(ix + 1, iy + 1, iz + 1);
-
-  const c00 = s000 * (1 - fx) + s100 * fx;
-  const c10 = s010 * (1 - fx) + s110 * fx;
-  const c01 = s001 * (1 - fx) + s101 * fx;
-  const c11 = s011 * (1 - fx) + s111 * fx;
-  const c0 = c00 * (1 - fy) + c10 * fy;
-  const c1 = c01 * (1 - fy) + c11 * fy;
-  const v = c0 * (1 - fz) + c1 * fz;
-  return v > 0.5;
-}
-
-function sampleField(ps: ProteinSurfacePort, x: number, y: number, z: number): number {
-  const ix = Math.max(0, Math.min(ps.pLength - 2, Math.floor(x)));
-  const iy = Math.max(0, Math.min(ps.pWidth - 2, Math.floor(y)));
-  const iz = Math.max(0, Math.min(ps.pHeight - 2, Math.floor(z)));
-  const fx = Math.min(1, Math.max(0, x - ix));
-  const fy = Math.min(1, Math.max(0, y - iy));
-  const fz = Math.min(1, Math.max(0, z - iz));
-  const s = (i: number, j: number, k: number) => {
-    const bits = ps.vpBits![gridIndex(ps, i, j, k)];
-    return (bits & ps.INOUT) ? 1 : ((bits & ps.ISDONE) ? 1 : 0);
-  };
-  const s000 = s(ix, iy, iz);
-  const s100 = s(ix + 1, iy, iz);
-  const s010 = s(ix, iy + 1, iz);
-  const s110 = s(ix + 1, iy + 1, iz);
-  const s001 = s(ix, iy, iz + 1);
-  const s101 = s(ix + 1, iy, iz + 1);
-  const s011 = s(ix, iy + 1, iz + 1);
-  const s111 = s(ix + 1, iy + 1, iz + 1);
-  const c00 = s000 * (1 - fx) + s100 * fx;
-  const c10 = s010 * (1 - fx) + s110 * fx;
-  const c01 = s001 * (1 - fx) + s101 * fx;
-  const c11 = s011 * (1 - fx) + s111 * fx;
-  const c0 = c00 * (1 - fy) + c10 * fy;
-  const c1 = c01 * (1 - fy) + c11 * fy;
-  return c0 * (1 - fz) + c1 * fz;
-}
-
-function gradientNormal(ps: ProteinSurfacePort, x: number, y: number, z: number): { nx: number; ny: number; nz: number } {
-  const h = 0.5; // grid units
-  const fx1 = sampleField(ps, x + h, y, z);
-  const fx0 = sampleField(ps, x - h, y, z);
-  const fy1 = sampleField(ps, x, y + h, z);
-  const fy0 = sampleField(ps, x, y - h, z);
-  const fz1 = sampleField(ps, x, y, z + h);
-  const fz0 = sampleField(ps, x, y, z - h);
-  // Inside is 1, outside is 0, so gradient points inward; use negative for outward
-  let nx = -(fx1 - fx0);
-  let ny = -(fy1 - fy0);
-  let nz = -(fz1 - fz0);
-  const len = Math.hypot(nx, ny, nz) || 1;
-  nx /= len; ny /= len; nz /= len;
-  return { nx, ny, nz };
-}
-
-function orientTrianglesGrid(verts: Array<{ x: number; y: number; z: number }>, faces: number[], ps: ProteinSurfacePort): void {
-  const eps = 0.25; // small step in grid units
-  for (let t = 0; t < faces.length; t += 3) {
-    const ia = faces[t], ib = faces[t + 1], ic = faces[t + 2];
-    const ax = verts[ia].x, ay = verts[ia].y, az = verts[ia].z;
-    const bx = verts[ib].x, by = verts[ib].y, bz = verts[ib].z;
-    const cx = verts[ic].x, cy = verts[ic].y, cz = verts[ic].z;
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const acx = cx - ax, acy = cy - ay, acz = cz - az;
-    const nx = aby * acz - abz * acy;
-    const ny = abz * acx - abx * acz;
-    const nz = abx * acy - aby * acx;
-    const len = Math.hypot(nx, ny, nz) || 1;
-    const ux = nx / len, uy = ny / len, uz = nz / len;
-    const cxm = (ax + bx + cx) / 3, cym = (ay + by + cy) / 3, czm = (az + bz + cz) / 3;
-    const px = cxm + eps * ux, py = cym + eps * uy, pz = czm + eps * uz;   // along normal
-    const mx = cxm - eps * ux, my = cym - eps * uy, mz = czm - eps * uz;   // opposite side
-    const insidePlus = sampleInside(ps, px, py, pz);
-    const insideMinus = sampleInside(ps, mx, my, mz);
-    // We want +eps to be outside and -eps to be inside. Flip only when reversed.
-    if (insidePlus && !insideMinus) {
-      faces[t + 1] = ic; faces[t + 2] = ib; // swap to flip winding
-    }
-  }
-}
-
-// Surface Nets triangulation on vpBits after marchingcubeinit; treat ISDONE as inside flag
-function surfaceNetsFromBits(ps: ProteinSurfacePort): { verts: Array<{ x: number; y: number; z: number }>; faces: number[] } {
-  const verts: Array<{ x: number; y: number; z: number }> = [];
-  const faces: number[] = [];
-  const vmap = new Int32Array((ps.pLength - 1) * (ps.pWidth - 1) * (ps.pHeight - 1)); vmap.fill(-1);
-  const idxCell = (i: number, j: number, k: number) => i + (ps.pLength - 1) * (j + (ps.pWidth - 1) * k);
-  const idxGrid = (i: number, j: number, k: number) => (ps.pWidth * ps.pHeight) * i + ps.pHeight * j + k;
-  const cdx = [0, 1, 0, 1, 0, 1, 0, 1];
-  const cdy = [0, 0, 1, 1, 0, 0, 1, 1];
-  const cdz = [0, 0, 0, 0, 1, 1, 1, 1];
-  const edges: [number, number][] = [[0,1],[1,3],[2,3],[0,2],[4,5],[5,7],[6,7],[4,6],[0,4],[1,5],[2,6],[3,7]];
-
-  // Helpers for deterministic orientation per face
-  const cornerVal = (i: number, j: number, k: number) => {
-    const bits = ps.vpBits![idxGrid(i, j, k)];
-    return (bits & ps.INOUT) ? 1 : ((bits & ps.ISDONE) ? 1 : 0);
-  };
-  const cellScore = (i: number, j: number, k: number) => {
-    let s = 0;
-    s += cornerVal(i, j, k);
-    s += cornerVal(i + 1, j, k);
-    s += cornerVal(i, j + 1, k);
-    s += cornerVal(i + 1, j + 1, k);
-    s += cornerVal(i, j, k + 1);
-    s += cornerVal(i + 1, j, k + 1);
-    s += cornerVal(i, j + 1, k + 1);
-    s += cornerVal(i + 1, j + 1, k + 1);
-    return s;
-  };
-  const pushOrientedQuad = (a: number, b: number, c: number, d: number, outx: number, outy: number, outz: number) => {
-    if (a < 0 || b < 0 || c < 0 || d < 0) return;
-    const ax = verts[a].x, ay = verts[a].y, az = verts[a].z;
-    const bx = verts[b].x, by = verts[b].y, bz = verts[b].z;
-    const cx = verts[c].x, cy = verts[c].y, cz = verts[c].z;
-    const abx = bx - ax, aby = by - ay, abz = bz - az;
-    const acx = cx - ax, acy = cy - ay, acz = cz - az;
-    const nx = aby * acz - abz * acy;
-    const ny = abz * acx - abx * acz;
-    const nz = abx * acy - aby * acx;
-    const dot = nx * outx + ny * outy + nz * outz;
-    if (dot >= 0) { faces.push(a, b, c, a, c, d); }
-    else { faces.push(a, c, b, a, d, c); }
-  };
-
-  let vcounter = 0;
-  for (let i = 0; i < ps.pLength - 1; i++) {
-    for (let j = 0; j < ps.pWidth - 1; j++) {
-      for (let k = 0; k < ps.pHeight - 1; k++) {
-        let mask = 0;
-        const corner = new Int8Array(8);
-        for (let c = 0; c < 8; c++) {
-          const gi = i + cdx[c], gj = j + cdy[c], gk = k + cdz[c];
-          const inside = (ps.vpBits![idxGrid(gi, gj, gk)] & ps.ISDONE) !== 0;
-          corner[c] = inside ? -1 : 1;
-          if (inside) mask |= (1 << c);
-        }
-        if (mask === 0 || mask === 0xff) continue;
-        // average edge t=0.5
-        let sx = 0, sy = 0, sz = 0, cnt = 0;
-        for (let e = 0; e < edges.length; e++) {
-          const a = edges[e][0], b = edges[e][1];
-          const va = corner[a], vb = corner[b];
-          if ((va < 0) === (vb < 0)) continue;
-          const ax = i + cdx[a], ay = j + cdy[a], az = k + cdz[a];
-          const bx = i + cdx[b], by = j + cdy[b], bz = k + cdz[b];
-          const t = 0.5;
-          const px = ax + (bx - ax) * t;
-          const py = ay + (by - ay) * t;
-          const pz = az + (bz - az) * t;
-          sx += px; sy += py; sz += pz; cnt++;
-        }
-        if (cnt === 0) continue;
-        const cx = sx / cnt, cy = sy / cnt, cz = sz / cnt;
-        const vidx = vcounter++;
-        vmap[idxCell(i, j, k)] = vidx;
-        verts.push({ x: cx, y: cy, z: cz });
-      }
-    }
-  }
-
-  // faces from edge changes, X/Y/Z directions
-
-  // Per-cell face stitching: for each cell with a vertex, connect to -X, -Y, -Z neighbor cell vertices.
-  for (let i = 0; i < ps.pLength - 1; i++) {
-    for (let j = 0; j < ps.pWidth - 1; j++) {
-      for (let k = 0; k < ps.pHeight - 1; k++) {
-        const vC = vmap[idxCell(i, j, k)];
-        if (vC < 0) continue;
-        // -X face (neighbor i-1), stitch using Z neighbors
-        if (i > 0 && k > 0) {
-          const vL = vmap[idxCell(i - 1, j, k)];
-          const vDL = vmap[idxCell(i - 1, j, k - 1)];
-          const vD = vmap[idxCell(i, j, k - 1)];
-          if (vL >= 0 && vDL >= 0 && vD >= 0) { faces.push(vC, vL, vDL, vC, vDL, vD); }
-        }
-        // -Y face (neighbor j-1), stitch using Z neighbors
-        if (j > 0 && k > 0) {
-          const vB = vmap[idxCell(i, j - 1, k)];
-          const vDB = vmap[idxCell(i, j - 1, k - 1)];
-          const vD = vmap[idxCell(i, j, k - 1)];
-          if (vB >= 0 && vDB >= 0 && vD >= 0) { faces.push(vC, vB, vDB, vC, vDB, vD); }
-        }
-        // -Z face (neighbor k-1), stitch using X/Y neighbors at same k
-        if (k > 0 && i > 0 && j > 0) {
-          const vCL = vmap[idxCell(i - 1, j, k)];
-          const vBL = vmap[idxCell(i - 1, j - 1, k)];
-          const vB = vmap[idxCell(i, j - 1, k)];
-          if (vCL >= 0 && vBL >= 0 && vB >= 0) { faces.push(vC, vCL, vBL, vC, vBL, vB); }
-        }
-      }
-    }
-  }
-
-  orientQuadsGrid(verts, faces, ps);
-  const cleanFaces = filterDegenerateFaces(verts, faces);
-  return { verts, faces: cleanFaces };
-}
-
-function computeExtent(atoms: Atom[], inflate: number): number[][] {
+function makeGrid(atoms: Atom[], pad: number, opts: SurfaceOptions): Grid {
   let minx = Infinity, miny = Infinity, minz = Infinity, maxx = -Infinity, maxy = -Infinity, maxz = -Infinity;
-  for (let i = 0; i < atoms.length; i++) {
-    const a = atoms[i], r = a.radius + inflate;
-    if (a.x - r < minx) minx = a.x - r;
-    if (a.y - r < miny) miny = a.y - r;
-    if (a.z - r < minz) minz = a.z - r;
-    if (a.x + r > maxx) maxx = a.x + r;
-    if (a.y + r > maxy) maxy = a.y + r;
-    if (a.z + r > maxz) maxz = a.z + r;
+  for (const a of atoms) {
+    const r = a.radius + pad;
+    minx = Math.min(minx, a.x - r); miny = Math.min(miny, a.y - r); minz = Math.min(minz, a.z - r);
+    maxx = Math.max(maxx, a.x + r); maxy = Math.max(maxy, a.y + r); maxz = Math.max(maxz, a.z + r);
   }
-  return [[minx, miny, minz], [maxx, maxy, maxz]];
+  const maxNodes = opts.maxGridPoints ?? 8_000_000;
+  let h = Math.max(0.1, opts.voxelSize ?? 0.5);
+  const volume = (maxx - minx) * (maxy - miny) * (maxz - minz);
+  h = Math.max(h, Math.cbrt(volume / maxNodes));
+  // Two spare nodes on each side keep the isosurface off the grid border
+  const ox = minx - 2 * h, oy = miny - 2 * h, oz = minz - 2 * h;
+  const nx = Math.ceil((maxx - minx) / h) + 5, ny = Math.ceil((maxy - miny) / h) + 5, nz = Math.ceil((maxz - minz) / h) + 5;
+  return { ox, oy, oz, h, nx, ny, nz };
 }
 
-function buildNormals(positions: Float32Array, indices: Uint32Array | undefined): Float32Array {
-  const nor = new Float32Array(positions.length);
-  if (!indices) return nor;
-  for (let i = 0; i < indices.length; i += 3) {
-    const a = indices[i] * 3, b = indices[i + 1] * 3, c = indices[i + 2] * 3;
-    const ax = positions[b] - positions[a], ay = positions[b + 1] - positions[a + 1], az = positions[b + 2] - positions[a + 2];
-    const bx = positions[c] - positions[a], by = positions[c + 1] - positions[a + 1], bz = positions[c + 2] - positions[a + 2];
-    const nx = ay * bz - az * by; const ny = az * bx - ax * bz; const nz = ax * by - ay * bx;
-    nor[a] += nx; nor[a + 1] += ny; nor[a + 2] += nz;
-    nor[b] += nx; nor[b + 1] += ny; nor[b + 2] += nz;
-    nor[c] += nx; nor[c + 1] += ny; nor[c + 2] += nz;
+/** Splat min(|p - c| - r - inflate) for every atom over nodes within `band` of its sphere. */
+function sphereField(g: Grid, atoms: Atom[], inflate: number, band: number, out: Float32Array, signal?: AbortSignal) {
+  const { ox, oy, oz, h, nx, ny, nz } = g;
+  for (let ai = 0; ai < atoms.length; ai++) {
+    if ((ai & 1023) === 0) checkAbort(signal);
+    const a = atoms[ai]!;
+    const R = a.radius + inflate;
+    const reach = R + band;
+    const i0 = Math.max(0, Math.floor((a.x - reach - ox) / h)), i1 = Math.min(nx - 1, Math.ceil((a.x + reach - ox) / h));
+    const j0 = Math.max(0, Math.floor((a.y - reach - oy) / h)), j1 = Math.min(ny - 1, Math.ceil((a.y + reach - oy) / h));
+    const k0 = Math.max(0, Math.floor((a.z - reach - oz) / h)), k1 = Math.min(nz - 1, Math.ceil((a.z + reach - oz) / h));
+    const reach2 = reach * reach;
+    for (let i = i0; i <= i1; i++) {
+      const dx = ox + i * h - a.x, dx2 = dx * dx;
+      for (let j = j0; j <= j1; j++) {
+        const dy = oy + j * h - a.y, dxy2 = dx2 + dy * dy;
+        if (dxy2 > reach2) continue;
+        let n = (i * ny + j) * nz + k0;
+        for (let k = k0; k <= k1; k++, n++) {
+          const dz = oz + k * h - a.z;
+          const d2 = dxy2 + dz * dz;
+          if (d2 > reach2) continue;
+          const v = Math.sqrt(d2) - R;
+          if (v < out[n]!) out[n] = v;
+        }
+      }
+    }
   }
-  // normalize
-  for (let i = 0; i < nor.length; i += 3) {
-    const nx = nor[i], ny = nor[i + 1], nz = nor[i + 2];
-    const l = Math.hypot(nx, ny, nz) || 1; nor[i] = nx / l; nor[i + 1] = ny / l; nor[i + 2] = nz / l;
-  }
-  return nor;
 }
 
-function finalizeGeometry(ps: ProteinSurfacePort, rawVerts: Array<{ x: number; y: number; z: number }>, faces: number[], vpAtomID: Int32Array): SurfaceGeometry {
-  // assign atom index using nearest grid node
-  const pWH = ps.pWidth * ps.pHeight;
-  const verts = rawVerts.map(v => {
-    const ix = Math.max(0, Math.min(ps.pLength - 1, Math.round(v.x)));
-    const iy = Math.max(0, Math.min(ps.pWidth - 1, Math.round(v.y)));
-    const iz = Math.max(0, Math.min(ps.pHeight - 1, Math.round(v.z)));
-    const atomid = vpAtomID[ix * pWH + iy * ps.pHeight + iz];
-    return { x: v.x / ps.scaleFactor - ps.ptranx, y: v.y / ps.scaleFactor - ps.ptrany, z: v.z / ps.scaleFactor - ps.ptranz, atomid };
+/** Uniform hash of atoms for nearest-sphere queries. */
+class AtomHash {
+  private cell: number;
+  private maxR = 0;
+  private map = new Map<number, number[]>();
+  constructor(private atoms: Atom[], cell: number) {
+    this.cell = cell;
+    atoms.forEach((a, i) => {
+      this.maxR = Math.max(this.maxR, a.radius);
+      const key = this.key(Math.floor(a.x / cell), Math.floor(a.y / cell), Math.floor(a.z / cell));
+      let list = this.map.get(key);
+      if (!list) { list = []; this.map.set(key, list); }
+      list.push(i);
+    });
+  }
+  private key(i: number, j: number, k: number) { return ((i + 1024) * 2048 + (j + 1024)) * 2048 + (k + 1024); }
+  /** Atom minimising |p - c| - (r + inflate), searching rings until a hit is certain. */
+  nearest(x: number, y: number, z: number, inflate: number): number {
+    const ci = Math.floor(x / this.cell), cj = Math.floor(y / this.cell), ck = Math.floor(z / this.cell);
+    let best = -1, bestV = Infinity;
+    for (let ring = 1; ring <= 64; ring++) {
+      for (let i = ci - ring; i <= ci + ring; i++) for (let j = cj - ring; j <= cj + ring; j++) for (let k = ck - ring; k <= ck + ring; k++) {
+        if (ring > 1 && Math.abs(i - ci) < ring && Math.abs(j - cj) < ring && Math.abs(k - ck) < ring) continue;
+        const list = this.map.get(this.key(i, j, k));
+        if (!list) continue;
+        for (const ai of list) {
+          const a = this.atoms[ai]!;
+          const v = Math.hypot(x - a.x, y - a.y, z - a.z) - a.radius - inflate;
+          if (v < bestV) { bestV = v; best = ai; }
+        }
+      }
+      // Unsearched atoms have centres at least ring * cell away, so they score >= ring * cell - maxR - inflate
+      if (best >= 0 && bestV <= ring * this.cell - this.maxR - inflate) break;
+    }
+    return best;
+  }
+}
+
+const NB26: Array<[number, number, number]> = [];
+for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (let dk = -1; dk <= 1; dk++) {
+  if (di || dj || dk) NB26.push([di, dj, dk]);
+}
+
+/**
+ * Exact samples of the SAS concave creases: the circles where two inflated spheres intersect, keeping
+ * only points not buried in a third sphere. These are the nearest SAS points for reentrant SES regions,
+ * which projected grid seeds only approximate.
+ */
+function creaseSeeds(atoms: Atom[], probe: number, spacing: number, out: number[]) {
+  let maxR = 0;
+  for (const a of atoms) maxR = Math.max(maxR, a.radius + probe);
+  const cell = 2 * maxR;
+  const grid = new Map<string, number[]>();
+  atoms.forEach((a, i) => {
+    const key = `${Math.floor(a.x / cell)},${Math.floor(a.y / cell)},${Math.floor(a.z / cell)}`;
+    (grid.get(key) ?? grid.set(key, []).get(key)!).push(i);
   });
-  const positions = new Float32Array(verts.length * 3);
-  const atomIndex = new Uint32Array(verts.length);
-  for (let i = 0; i < verts.length; i++) {
-    positions[i * 3] = verts[i].x; positions[i * 3 + 1] = verts[i].y; positions[i * 3 + 2] = verts[i].z;
-    atomIndex[i] = verts[i].atomid ?? 0;
+  // Intersecting neighbours per atom
+  const nbrs: number[][] = atoms.map(() => []);
+  atoms.forEach((a, i) => {
+    const ci = Math.floor(a.x / cell), cj = Math.floor(a.y / cell), ck = Math.floor(a.z / cell);
+    const Ri = a.radius + probe;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (let dk = -1; dk <= 1; dk++) {
+      for (const j of grid.get(`${ci + di},${cj + dj},${ck + dk}`) ?? []) {
+        if (j === i) continue;
+        const b = atoms[j]!;
+        if (Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < Ri + b.radius + probe) nbrs[i]!.push(j);
+      }
+    }
+  });
+  for (let i = 0; i < atoms.length; i++) {
+    const a = atoms[i]!, Ri = a.radius + probe;
+    for (const j of nbrs[i]!) {
+      if (j < i) continue;
+      const b = atoms[j]!, Rj = b.radius + probe;
+      const ux0 = b.x - a.x, uy0 = b.y - a.y, uz0 = b.z - a.z;
+      const dij = Math.hypot(ux0, uy0, uz0);
+      if (dij < 1e-6 || dij <= Math.abs(Ri - Rj)) continue;
+      const ux = ux0 / dij, uy = uy0 / dij, uz = uz0 / dij;
+      const along = (dij * dij + Ri * Ri - Rj * Rj) / (2 * dij);
+      const rho = Math.sqrt(Math.max(0, Ri * Ri - along * along));
+      if (rho < 1e-6) continue;
+      // Orthonormal basis (e1, e2) perpendicular to u
+      const ax = Math.abs(ux) < 0.9 ? 1 : 0, ay = 1 - ax;
+      let e1x = -uz * ay, e1y = uz * ax, e1z = ux * ay - uy * ax; // u x (ax, ay, 0)
+      const l1 = Math.hypot(e1x, e1y, e1z); e1x /= l1; e1y /= l1; e1z /= l1;
+      const e2x = uy * e1z - uz * e1y, e2y = uz * e1x - ux * e1z, e2z = ux * e1y - uy * e1x;
+      const cx = a.x + ux * along, cy = a.y + uy * along, cz = a.z + uz * along;
+      const steps = Math.max(8, Math.ceil((2 * Math.PI * rho) / spacing));
+      for (let s = 0; s < steps; s++) {
+        const t = (2 * Math.PI * s) / steps, ct = Math.cos(t) * rho, st = Math.sin(t) * rho;
+        const qx = cx + e1x * ct + e2x * st, qy = cy + e1y * ct + e2y * st, qz = cz + e1z * ct + e2z * st;
+        let buried = false;
+        for (const k of nbrs[i]!) {
+          if (k === j) continue;
+          const c = atoms[k]!, Rk = c.radius + probe;
+          const ex = qx - c.x, ey = qy - c.y, ez = qz - c.z;
+          if (ex * ex + ey * ey + ez * ez < Rk * Rk - 1e-6) { buried = true; break; }
+        }
+        if (!buried) out.push(qx, qy, qz);
+      }
+    }
   }
-  const indices = faces.length > 0 ? new Uint32Array(faces) : undefined;
-  const normals = buildNormals(positions, indices);
-  return { positions, normals, indices, atomIndex };
+}
+
+/**
+ * SES field: for nodes inside the SAS, D = distance to the nearest exact SAS surface point. Seeds come from
+ * outside nodes next to the SAS projected onto their nearest inflated sphere (always an exposed surface
+ * point). Since D >= depth inside the SAS (-fsas), only nodes shallower than probe + 2h need a query, and
+ * each one takes the exact minimum over seeds in a spatial hash. Returns probe - D, capped deep inside.
+ */
+function sesField(g: Grid, atoms: Atom[], probe: number, fsas: Float32Array, hash: AtomHash, signal?: AbortSignal): Float32Array {
+  const { ox, oy, oz, h, nx, ny, nz } = g;
+  const total = nx * ny * nz;
+  const limit = probe + 2 * h;
+
+  // Seeds: outside nodes with an inside neighbour, projected onto the SAS
+  const seedList: number[] = [];
+  for (let i = 1; i < nx - 1; i++) {
+    checkAbort(signal);
+    for (let j = 1; j < ny - 1; j++) for (let k = 1; k < nz - 1; k++) {
+      const n = (i * ny + j) * nz + k;
+      if (fsas[n]! < 0 || fsas[n]! > 2 * h) continue;
+      let touchesInside = false;
+      for (const [di, dj, dk] of NB26) if (fsas[n + (di * ny + dj) * nz + dk]! < 0) { touchesInside = true; break; }
+      if (!touchesInside) continue;
+      const px = ox + i * h, py = oy + j * h, pz = oz + k * h;
+      const ai = hash.nearest(px, py, pz, probe);
+      if (ai < 0) continue;
+      const a = atoms[ai]!;
+      const dx = px - a.x, dy = py - a.y, dz = pz - a.z;
+      const s = (a.radius + probe) / (Math.hypot(dx, dy, dz) || 1);
+      seedList.push(a.x + dx * s, a.y + dy * s, a.z + dz * s);
+    }
+  }
+
+  creaseSeeds(atoms, probe, h * 0.5, seedList);
+
+  // Bucket seeds into cells of size `limit`, sorted by cell so each bucket is a contiguous range
+  const cs = limit;
+  const cnx = Math.ceil((nx * h) / cs) + 1, cny = Math.ceil((ny * h) / cs) + 1, cnz = Math.ceil((nz * h) / cs) + 1;
+  const seedCount = seedList.length / 3;
+  const cellOfSeed = new Int32Array(seedCount);
+  const cellStart = new Int32Array(cnx * cny * cnz + 1);
+  for (let s = 0; s < seedCount; s++) {
+    const ci = Math.floor((seedList[s * 3]! - ox) / cs), cj = Math.floor((seedList[s * 3 + 1]! - oy) / cs), ck = Math.floor((seedList[s * 3 + 2]! - oz) / cs);
+    const c = (Math.min(cnx - 1, Math.max(0, ci)) * cny + Math.min(cny - 1, Math.max(0, cj))) * cnz + Math.min(cnz - 1, Math.max(0, ck));
+    cellOfSeed[s] = c;
+    cellStart[c + 1]!++;
+  }
+  for (let c = 0; c < cnx * cny * cnz; c++) cellStart[c + 1]! += cellStart[c]!;
+  const fill = cellStart.slice(0, -1);
+  const seeds = new Float32Array(seedCount * 3);
+  for (let s = 0; s < seedCount; s++) {
+    const o = fill[cellOfSeed[s]!]!++ * 3;
+    seeds[o] = seedList[s * 3]!; seeds[o + 1] = seedList[s * 3 + 1]!; seeds[o + 2] = seedList[s * 3 + 2]!;
+  }
+
+  const out = new Float32Array(total);
+  const limit2 = limit * limit;
+  for (let i = 0; i < nx; i++) {
+    checkAbort(signal);
+    const px = ox + i * h, ci = Math.floor((px - ox) / cs);
+    for (let j = 0; j < ny; j++) {
+      const py = oy + j * h, cj = Math.floor((py - oy) / cs);
+      for (let k = 0; k < nz; k++) {
+        const n = (i * ny + j) * nz + k;
+        const fs = fsas[n]!;
+        if (fs >= 0) { out[n] = probe; continue; }
+        if (fs <= -limit) { out[n] = probe - limit; continue; }
+        const pz = oz + k * h, ck = Math.floor((pz - oz) / cs);
+        let best = limit2;
+        for (let a = Math.max(0, ci - 1); a <= Math.min(cnx - 1, ci + 1); a++) {
+          for (let b = Math.max(0, cj - 1); b <= Math.min(cny - 1, cj + 1); b++) {
+            const row = (a * cny + b) * cnz;
+            const s0 = cellStart[row + Math.max(0, ck - 1)]!, s1 = cellStart[row + Math.min(cnz - 1, ck + 1) + 1]!;
+            for (let s = s0; s < s1; s++) {
+              const dx = seeds[s * 3]! - px, dy = seeds[s * 3 + 1]! - py, dz = seeds[s * 3 + 2]! - pz;
+              const d2 = dx * dx + dy * dy + dz * dz;
+              if (d2 < best) best = d2;
+            }
+          }
+        }
+        out[n] = probe - Math.sqrt(best);
+      }
+    }
+  }
+  return out;
+}
+
+class FloatBuilder {
+  data: Float32Array;
+  length = 0;
+  constructor(capacity: number) { this.data = new Float32Array(Math.max(16, capacity)); }
+  push3(x: number, y: number, z: number) {
+    if (this.length + 3 > this.data.length) { const d = new Float32Array(this.data.length * 2); d.set(this.data); this.data = d; }
+    this.data[this.length++] = x; this.data[this.length++] = y; this.data[this.length++] = z;
+  }
+}
+
+class IndexBuilder {
+  data: Uint32Array;
+  length = 0;
+  constructor(capacity: number) { this.data = new Uint32Array(Math.max(16, capacity)); }
+  quad(a: number, b: number, c: number, d: number) {
+    if (this.length + 6 > this.data.length) { const n = new Uint32Array(this.data.length * 2); n.set(this.data); this.data = n; }
+    const o = this.data;
+    o[this.length++] = a; o[this.length++] = b; o[this.length++] = c;
+    o[this.length++] = a; o[this.length++] = c; o[this.length++] = d;
+  }
+}
+
+// Cube corners (di, dj, dk) and the 12 edges between them
+const CORNERS: Array<[number, number, number]> = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+const EDGES: Array<[number, number]> = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+
+/**
+ * Surface nets on the zero level set of f (negative inside). One vertex per crossing cell at the mean of
+ * its interpolated edge crossings; one quad per crossing grid edge, wound so the normal points outward.
+ * Normals come from the analytic gradient of the trilinear field in the vertex's cell.
+ */
+function surfaceNets(g: Grid, f: Float32Array, signal?: AbortSignal) {
+  const { ox, oy, oz, h, nx, ny, nz } = g;
+  const cny = ny - 1, cnz = nz - 1;
+  const cellVert = new Int32Array((nx - 1) * cny * cnz).fill(-1);
+  const pos = new FloatBuilder(1 << 16);
+  const nrm = new FloatBuilder(1 << 16);
+  const idx = new IndexBuilder(1 << 17);
+  const v = new Float64Array(8);
+
+  for (let i = 0; i < nx - 1; i++) {
+    checkAbort(signal);
+    for (let j = 0; j < ny - 1; j++) for (let k = 0; k < nz - 1; k++) {
+      let mask = 0;
+      for (let c = 0; c < 8; c++) {
+        const [di, dj, dk] = CORNERS[c]!;
+        v[c] = f[((i + di) * ny + (j + dj)) * nz + (k + dk)]!;
+        if (v[c]! < 0) mask |= 1 << c;
+      }
+      if (mask === 0 || mask === 0xff) continue;
+      let sx = 0, sy = 0, sz = 0, cnt = 0;
+      for (const [a, b] of EDGES) {
+        const va = v[a]!, vb = v[b]!;
+        if ((va < 0) === (vb < 0)) continue;
+        const t = va / (va - vb);
+        const A = CORNERS[a]!, B = CORNERS[b]!;
+        sx += A[0] + (B[0] - A[0]) * t; sy += A[1] + (B[1] - A[1]) * t; sz += A[2] + (B[2] - A[2]) * t;
+        cnt++;
+      }
+      const fx = sx / cnt, fy = sy / cnt, fz = sz / cnt;
+      cellVert[(i * cny + j) * cnz + k] = pos.length / 3;
+      pos.push3(ox + (i + fx) * h, oy + (j + fy) * h, oz + (k + fz) * h);
+      // Gradient of the trilinear interpolant at (fx, fy, fz); f increases outward
+      const gx = (1 - fy) * (1 - fz) * (v[1]! - v[0]!) + fy * (1 - fz) * (v[3]! - v[2]!) + (1 - fy) * fz * (v[5]! - v[4]!) + fy * fz * (v[7]! - v[6]!);
+      const gy = (1 - fx) * (1 - fz) * (v[2]! - v[0]!) + fx * (1 - fz) * (v[3]! - v[1]!) + (1 - fx) * fz * (v[6]! - v[4]!) + fx * fz * (v[7]! - v[5]!);
+      const gz = (1 - fx) * (1 - fy) * (v[4]! - v[0]!) + fx * (1 - fy) * (v[5]! - v[1]!) + (1 - fx) * fy * (v[6]! - v[2]!) + fx * fy * (v[7]! - v[3]!);
+      const len = Math.hypot(gx, gy, gz) || 1;
+      nrm.push3(gx / len, gy / len, gz / len);
+    }
+  }
+
+  const cell = (i: number, j: number, k: number) => cellVert[(i * cny + j) * cnz + k]!;
+  // Emit a quad around a crossing edge; a..d go counter-clockwise seen from the edge's +axis side
+  const emit = (insideAtLow: boolean, a: number, b: number, c: number, d: number) => {
+    if (a < 0 || b < 0 || c < 0 || d < 0) return;
+    if (insideAtLow) idx.quad(a, b, c, d); else idx.quad(a, d, c, b);
+  };
+  for (let i = 1; i < nx - 1; i++) {
+    checkAbort(signal);
+    for (let j = 1; j < ny - 1; j++) for (let k = 1; k < nz - 1; k++) {
+      const n = (i * ny + j) * nz + k;
+      const inside = f[n]! < 0;
+      // x-edge (i,j,k)->(i+1,j,k): cells around it in the (y, z) plane
+      if (i < nx - 2 && inside !== (f[n + ny * nz]! < 0)) {
+        emit(inside, cell(i, j - 1, k - 1), cell(i, j, k - 1), cell(i, j, k), cell(i, j - 1, k));
+      }
+      // y-edge: cells in the (z, x) plane
+      if (j < ny - 2 && inside !== (f[n + nz]! < 0)) {
+        emit(inside, cell(i - 1, j, k - 1), cell(i - 1, j, k), cell(i, j, k), cell(i, j, k - 1));
+      }
+      // z-edge: cells in the (x, y) plane
+      if (k < nz - 2 && inside !== (f[n + 1]! < 0)) {
+        emit(inside, cell(i - 1, j - 1, k), cell(i, j - 1, k), cell(i, j, k), cell(i - 1, j, k));
+      }
+    }
+  }
+
+  return {
+    positions: pos.data.slice(0, pos.length),
+    normals: nrm.data.slice(0, nrm.length),
+    indices: idx.data.slice(0, idx.length),
+  };
+}
+
+function assignAtoms(atoms: Atom[], positions: Float32Array, hash: AtomHash): Uint32Array {
+  const out = new Uint32Array(positions.length / 3);
+  for (let v = 0; v < out.length; v++) {
+    out[v] = Math.max(0, hash.nearest(positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!, 0));
+  }
+  return out;
+}
+
+type Kind = "vdw" | "sas" | "ses";
+
+function generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions): SurfaceGeometry {
+  if (atoms.length === 0) return { positions: new Float32Array(0), normals: new Float32Array(0), indices: new Uint32Array(0), atomIndex: new Uint32Array(0) };
+  const probe = opts.probeRadius ?? 1.4;
+  const signal = opts.signal;
+  const g = makeGrid(atoms, kind === "vdw" ? 0 : probe, opts);
+  const total = g.nx * g.ny * g.nz;
+  const band = 2 * g.h;
+  const hash = new AtomHash(atoms, 4);
+
+  let f: Float32Array;
+  if (kind === "vdw") {
+    f = new Float32Array(total).fill(FAR);
+    sphereField(g, atoms, 0, band, f, signal);
+  } else if (kind === "sas") {
+    f = new Float32Array(total).fill(FAR);
+    sphereField(g, atoms, probe, band, f, signal);
+  } else {
+    // SAS field must be exact wherever D is propagated (up to probe + band inside it)
+    const fsas = new Float32Array(total).fill(FAR);
+    sphereField(g, atoms, probe, band, fsas, signal);
+    f = sesField(g, atoms, probe, fsas, hash, signal);
+    const fvdw = fsas.fill(FAR); // reuse the buffer
+    sphereField(g, atoms, 0, band, fvdw, signal);
+    for (let n = 0; n < total; n++) if (fvdw[n]! < f[n]!) f[n] = fvdw[n]!;
+  }
+  checkAbort(signal);
+
+  const { positions, normals, indices } = surfaceNets(g, f, signal);
+  return { positions, normals, indices, atomIndex: assignAtoms(atoms, positions, hash) };
 }
 
 export async function generateVDW(atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
-  const probe = 0;
-  const ps = new ProteinSurfacePort();
-  if (typeof opts.voxelSize === 'number' && opts.voxelSize > 0) ps.scaleFactor = Math.max(1, Math.round(1 / opts.voxelSize));
-  ps.probeRadius = opts.probeRadius ?? 1.4;
-  const extent = computeExtent(atoms, probe);
-  const volume = (extent[1][0]-extent[0][0])*(extent[1][1]-extent[0][1])*(extent[1][2]-extent[0][2]);
-  ps.initparm(extent, 0, volume);
-  ps.fillvoxelswaals(atoms);
-  ps.initSurfaceField(SurfaceType.VDW);
-  const { verts, faces } = surfaceNetsFromBits(ps);
-  return finalizeGeometry(ps, verts, faces, ps.vpAtomID!);
+  return generate("vdw", atoms, opts);
 }
 
 export async function generateSAS(atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
-  const ps = new ProteinSurfacePort();
-  if (typeof opts.voxelSize === 'number' && opts.voxelSize > 0) ps.scaleFactor = Math.max(1, Math.round(1 / opts.voxelSize));
-  ps.probeRadius = opts.probeRadius ?? 1.4;
-  const extent = computeExtent(atoms, ps.probeRadius);
-  const volume = (extent[1][0]-extent[0][0])*(extent[1][1]-extent[0][1])*(extent[1][2]-extent[0][2]);
-  ps.initparm(extent, 1, volume);
-  ps.fillvoxels(atoms);
-  ps.initSurfaceField(SurfaceType.SAS);
-  const { verts, faces } = surfaceNetsFromBits(ps);
-  return finalizeGeometry(ps, verts, faces, ps.vpAtomID!);
+  return generate("sas", atoms, opts);
 }
 
 export async function generateSES(atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
-  const ps = new ProteinSurfacePort();
-  if (typeof opts.voxelSize === 'number' && opts.voxelSize > 0) ps.scaleFactor = Math.max(1, Math.round(1 / opts.voxelSize));
-  ps.probeRadius = opts.probeRadius ?? 1.4;
-  const extent = computeExtent(atoms, ps.probeRadius);
-  const volume = (extent[1][0]-extent[0][0])*(extent[1][1]-extent[0][1])*(extent[1][2]-extent[0][2]);
-  ps.initparm(extent, 1, volume);
-  // occupancy from inflated spheres
-  ps.fillvoxels(atoms);
-  // boundary and EDT for SES
-  ps.buildboundary();
-  ps.fastdistancemap();
-  ps.initSurfaceField(SurfaceType.SES);
-  const { verts, faces } = surfaceNetsFromBits(ps);
-  return finalizeGeometry(ps, verts, faces, ps.vpAtomID!);
+  return generate("ses", atoms, opts);
 }
