@@ -1,6 +1,6 @@
 /*
  Title: StructureControls
- Description: Sidebar UI component for loading a PDB source URL and toggling chain visibility.
+ Description: Sidebar UI component for loading a structure (PDB ID, URL or path) and toggling chain visibility.
  Renders inputs and checkboxes and delegates actions via props callbacks.
 */
 import { useMemo } from "react";
@@ -8,8 +8,10 @@ import type { MolScene } from "pdb-parser";
 
 export interface StructureControlsProps {
     scene: MolScene | null;
-    sourceUrl: string;
-    onSourceUrlChange: (value: string) => void;
+    sourceInput: string;
+    onSourceInputChange: (value: string) => void;
+    hint?: string;
+    error?: string;
     chainSelected: Record<number, boolean>;
     onToggleChain: (idx: number, checked: boolean) => void;
     onAllChains: () => void;
@@ -23,11 +25,15 @@ export function StructureControls(props: StructureControlsProps) {
             <div className="mb-2 text-sm font-semibold">Load file</div>
             <input
                 type="text"
-                value={props.sourceUrl}
-                onChange={(e) => props.onSourceUrlChange(e.target.value)}
-                placeholder="/models/1IGY.pdb or URL"
+                value={props.sourceInput}
+                onChange={(e) => props.onSourceInputChange(e.target.value)}
+                placeholder="PDB ID (e.g. 4HHB), URL or path"
+                spellCheck={false}
                 className="w-full rounded-md bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-zinc-500"
             />
+            {props.error
+                ? <div className="mt-1.5 text-xs text-red-400">{props.error}</div>
+                : props.hint && <div className="mt-1.5 text-xs text-zinc-400">{props.hint}</div>}
             {chains && chains.length > 0 && (
                 <div className="mt-3">
                     <div className="my-2 h-px bg-zinc-800" />

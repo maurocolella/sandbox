@@ -16,7 +16,7 @@ export function useMolScene(url: string, options: ParseOptions): { scene: MolSce
     let mounted = true;
     setLoading(true);
     setError(undefined);
-    setScene(null);
+    // Keep the current scene on screen until the new one has parsed
     (async () => {
       try {
         const res = await fetch(url);

@@ -12,9 +12,20 @@ import SurfaceWorker from "chem-surface/worker?worker";
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 import { Leva } from "leva";
 import { StructureControls } from "./StructureControls";
+import { resolveStructureSource, type StructureSource } from "../lib/structureSource";
+
+const INITIAL_SOURCE = "/models/1IGY.pdb";
 
 export function MainView() {
-  const [sourceUrl, setSourceUrl] = useState<string>("/models/1IGY.pdb");
+  // Raw text in the field; the structure loads once it resolves (PDB ID, URL or path) and typing pauses
+  const [sourceInput, setSourceInput] = useState<string>(INITIAL_SOURCE);
+  const [source, setSource] = useState<StructureSource>(() => resolveStructureSource(INITIAL_SOURCE)!);
+  const pending = useMemo(() => resolveStructureSource(sourceInput), [sourceInput]);
+  useEffect(() => {
+    if (!pending || pending.url === source.url) return;
+    const t = setTimeout(() => setSource(pending), 350);
+    return () => clearTimeout(t);
+  }, [pending, source.url]);
 
   const { parseOpts, display, style, spheres, selection, surface } = useRendererControls();
 
@@ -24,7 +35,11 @@ export function MainView() {
     ...(parseOpts.useModelSelection ? { modelSelection: parseOpts.modelSelection as number } : {}),
   }), [parseOpts]);
 
-  const { scene, error, loading } = useMolScene(sourceUrl, parseOptions);
+  const { scene, error, loading } = useMolScene(source.url, parseOptions);
+  const sourceError = error && source.pdbId && /\b404\b/.test(error)
+    ? `No PDB-format file for ${source.pdbId} on RCSB: the entry may not exist, or may be distributed as mmCIF only.`
+    : error;
+  const sourceHint = pending?.pdbId ? `RCSB entry ${pending.pdbId}` : undefined;
 
   const { chainSelected, setChainSelected, selectedChainIndices } = useChainSelection(scene as MolScene | null);
 
@@ -110,8 +125,10 @@ export function MainView() {
       <div className="absolute top-3 left-3 z-10 w-96">
         <StructureControls
           scene={scene as MolScene | null}
-          sourceUrl={sourceUrl}
-          onSourceUrlChange={setSourceUrl}
+          sourceInput={sourceInput}
+          onSourceInputChange={setSourceInput}
+          hint={sourceHint}
+          error={sourceError}
           chainSelected={chainSelected}
           onToggleChain={handleChainCheckbox}
           onAllChains={handleAllChains}
@@ -143,11 +160,6 @@ export function MainView() {
       {loading && (
         <div style={{ position: "absolute", left: 12, bottom: 12, color: "#ccc", fontFamily: "monospace", fontSize: 12 }}>
           Loading…
-        </div>
-      )}
-      {error && (
-        <div style={{ position: "absolute", left: 12, bottom: 12, color: "#f88", fontFamily: "monospace", fontSize: 12 }}>
-          {error}
         </div>
       )}
     </div>
