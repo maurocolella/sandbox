@@ -1,0 +1,38 @@
+{
+ "altlocs": {
+  "A": 258,
+  "B": 253,
+  "C": 22,
+  "D": 1
+ },
+ "assemblies": 1,
+ "atomSiteRows": 1026,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 297,
+  "H": 440,
+  "N": 72,
+  "O": 211,
+  "S": 6
+ },
+ "entityTypes": {
+  "non-polymer": 1,
+  "polymer": 1,
+  "water": 1
+ },
+ "file": "3NIR.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 6,
+ "microheterogeneousPositions": 2,
+ "models": {
+  "1": 1026
+ },
+ "operators": 1,
+ "sheetRangeRows": 2,
+ "structConfRows": 1,
+ "structConnByType": {
+  "disulf": 3
+ }
+}

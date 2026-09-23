@@ -1,0 +1,33 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 27627,
+ "authAsymCount": 39,
+ "branchSchemeRows": 102,
+ "elements": {
+  "C": 17511,
+  "N": 4431,
+  "O": 5565,
+  "S": 120
+ },
+ "entityTypes": {
+  "branched": 4,
+  "non-polymer": 1,
+  "polymer": 1
+ },
+ "file": "6XR8.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 60,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 27627
+ },
+ "operators": 1,
+ "sheetRangeRows": 200,
+ "structConfRows": 76,
+ "structConnByType": {
+  "covale": 110,
+  "disulf": 45
+ }
+}

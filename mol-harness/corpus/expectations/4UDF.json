@@ -1,0 +1,36 @@
+{
+ "altlocs": {
+  "1": 2580,
+  "2": 2580,
+  "A": 120,
+  "B": 120
+ },
+ "assemblies": 1,
+ "atomSiteRows": 326520,
+ "authAsymCount": 240,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 191460,
+  "H": 24420,
+  "N": 50640,
+  "O": 58860,
+  "S": 1140
+ },
+ "entityTypes": {
+  "polymer": 4
+ },
+ "file": "4UDF.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 240,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 326520
+ },
+ "operators": 1,
+ "sheetRangeRows": 2940,
+ "structConfRows": 660,
+ "structConnByType": {
+  "disulf": 120
+ }
+}

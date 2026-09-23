@@ -1,0 +1,30 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 4380,
+ "authAsymCount": 2,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 2786,
+  "N": 732,
+  "O": 842,
+  "S": 20
+ },
+ "entityTypes": {
+  "non-polymer": 1,
+  "polymer": 1,
+  "water": 1
+ },
+ "file": "8VF6.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 6,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 4380
+ },
+ "operators": 1,
+ "sheetRangeRows": 20,
+ "structConfRows": 21,
+ "structConnByType": {}
+}

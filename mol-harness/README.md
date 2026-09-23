@@ -14,9 +14,10 @@ It uses the built parser (`pdb-parser/dist`), so build that first: `pnpm --filte
 
 - `tests/`: corpus-scale tests. `pdb-bulk.spec.ts` parses every harvested `.pdb` file.
 - `corpus/tricky.tsv`: verified tricky entries with the property each one exercises. It lists IDs only; fetch the files with `mol-crawler`.
+- `corpus/expectations/*.json`: gemmi-recorded expectations for each tricky entry (gemmi 0.7.5), the oracle loader tests compare against. The fixtures themselves live in the gitignored `../fixtures/cif/` (43 entries, 609 MB gzipped); see the `mol-crawler` README for the fetch command.
 - `fixtures/cif-syntax/cases.json`: CIF edge-case inputs with gemmi's reading as the reference. Our tolerant parser deliberately differs in places, so tests say so explicitly.
 - `fixtures/producers/`: 4HHB as written by third-party mmCIF writers (Biopython, biotite, gemmi, OpenMM, python-modelcif), gzipped. These pin each writer's deviations.
-- `tools/` (Python, needs gemmi; the producer generator needs the writers too):
+- `tools/` (Python; `pip install -r tools/requirements.txt`, where gemmi alone covers the oracle and syntax tools):
   - `gemmi_expect.py`: records expectations per file (atom counts, models, altlocs, asyms, microheterogeneity, struct_conn by type, secondary structure, entities, assemblies) as JSON, the oracle for loader tests.
   - `syntax_cases.py`: regenerates `cases.json`.
   - `gen_producer_fixtures.py`: regenerates the producer fixtures; the output is byte-identical with the tool versions it lists.

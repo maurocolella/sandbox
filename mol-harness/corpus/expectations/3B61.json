@@ -1,0 +1,25 @@
+{
+ "altlocs": {},
+ "assemblies": 4,
+ "atomSiteRows": 856,
+ "authAsymCount": 8,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 856
+ },
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "3B61.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 8,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 856
+ },
+ "operators": 1,
+ "sheetRangeRows": 0,
+ "structConfRows": 0,
+ "structConnByType": {}
+}

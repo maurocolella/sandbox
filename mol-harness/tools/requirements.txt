@@ -1,0 +1,8 @@
+# Oracle and fixture tools. gemmi is enough for gemmi_expect.py and syntax_cases.py;
+# the rest are only needed by gen_producer_fixtures.py (versions that produced the committed fixtures).
+gemmi==0.7.5
+biotite==1.6.0
+biopython==1.88
+openmm==8.6.1
+modelcif==1.8
+ihm==2.11

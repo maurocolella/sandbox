@@ -1,0 +1,28 @@
+{
+ "altlocs": {},
+ "assemblies": 0,
+ "atomSiteRows": 1077,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 690,
+  "N": 188,
+  "O": 195,
+  "S": 4
+ },
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "AF-P69905-F1.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 1,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 1077
+ },
+ "operators": 0,
+ "sheetRangeRows": 0,
+ "structConfRows": 21,
+ "structConnByType": {}
+}

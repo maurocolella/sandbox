@@ -1,7 +1,8 @@
 """Record gemmi-derived expectations for mmCIF files as JSON (the oracle for loader tests).
 
 Usage: python gemmi_expect.py FILE.cif[.gz] ... > expectations.json
-Requires gemmi (tested with 0.7.5).
+       python gemmi_expect.py --out-dir ../corpus/expectations FILE.cif[.gz] ...   (one ID.json per file)
+Requires gemmi (tested with 0.7.5). Memory is roughly 10x the uncompressed file (36ZA needs ~12 GB).
 """
 import collections
 import json
@@ -50,6 +51,7 @@ def expect(path):
 
     return {
         "file": path.rsplit("/", 1)[-1],
+        "gemmiVersion": gemmi.__version__,
         "atomSiteRows": len(rows),
         "models": dict(models),
         "altlocs": dict(alts),
@@ -69,5 +71,14 @@ def expect(path):
 
 
 if __name__ == "__main__":
-    json.dump([expect(p) for p in sys.argv[1:]], sys.stdout, indent=1, sort_keys=True)
-    sys.stdout.write("\n")
+    args = sys.argv[1:]
+    if args[:1] == ["--out-dir"]:
+        out_dir, paths = args[1], args[2:]
+        for p in paths:
+            name = p.rsplit("/", 1)[-1].split(".cif")[0]
+            with open(f"{out_dir}/{name}.json", "w") as fh:
+                json.dump(expect(p), fh, indent=1, sort_keys=True)
+                fh.write("\n")
+    else:
+        json.dump([expect(p) for p in args], sys.stdout, indent=1, sort_keys=True)
+        sys.stdout.write("\n")

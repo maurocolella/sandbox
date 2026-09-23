@@ -1,0 +1,40 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 15323,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 4728,
+  "H": 7860,
+  "N": 1368,
+  "O": 1331,
+  "S": 36
+ },
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "2AXD.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 1,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 1276,
+  "10": 1277,
+  "11": 1277,
+  "12": 1277,
+  "2": 1277,
+  "3": 1277,
+  "4": 1277,
+  "5": 1277,
+  "6": 1277,
+  "7": 1277,
+  "8": 1277,
+  "9": 1277
+ },
+ "operators": 1,
+ "sheetRangeRows": 0,
+ "structConfRows": 6,
+ "structConnByType": {}
+}

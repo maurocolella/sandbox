@@ -1,0 +1,38 @@
+{
+ "altlocs": {
+  "A": 98,
+  "B": 98
+ },
+ "assemblies": 1,
+ "atomSiteRows": 4527463,
+ "authAsymCount": 1574,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 2855674,
+  "MG": 345,
+  "N": 781692,
+  "O": 859540,
+  "P": 1716,
+  "S": 28496
+ },
+ "entityTypes": {
+  "non-polymer": 3,
+  "polymer": 165
+ },
+ "file": "9FQR.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 2606,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 4527463
+ },
+ "operators": 1,
+ "sheetRangeRows": 13314,
+ "structConfRows": 21806,
+ "structConnByType": {
+  "covale": 389,
+  "disulf": 104,
+  "metalc": 902
+ }
+}

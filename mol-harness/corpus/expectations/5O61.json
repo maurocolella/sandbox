@@ -1,0 +1,35 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 151463,
+ "authAsymCount": 57,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 75610,
+  "MG": 625,
+  "N": 28158,
+  "O": 42132,
+  "P": 4828,
+  "S": 104,
+  "ZN": 6
+ },
+ "entityTypes": {
+  "non-polymer": 3,
+  "polymer": 57
+ },
+ "file": "5O61.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 689,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 151463
+ },
+ "operators": 1,
+ "sheetRangeRows": 229,
+ "structConfRows": 188,
+ "structConnByType": {
+  "hydrog": 4915,
+  "metalc": 646
+ }
+}

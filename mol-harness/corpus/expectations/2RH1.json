@@ -1,0 +1,34 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 3804,
+ "authAsymCount": 2,
+ "branchSchemeRows": 2,
+ "elements": {
+  "C": 2466,
+  "N": 593,
+  "O": 715,
+  "S": 30
+ },
+ "entityTypes": {
+  "branched": 1,
+  "non-polymer": 7,
+  "polymer": 1,
+  "water": 1
+ },
+ "file": "2RH1.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 18,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 3804
+ },
+ "operators": 1,
+ "sheetRangeRows": 4,
+ "structConfRows": 19,
+ "structConnByType": {
+  "covale": 3,
+  "disulf": 2
+ }
+}

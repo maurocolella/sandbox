@@ -1,0 +1,36 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 2457,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 613,
+  "D": 497,
+  "H": 695,
+  "N": 198,
+  "NA": 1,
+  "O": 443,
+  "S": 10
+ },
+ "entityTypes": {
+  "non-polymer": 2,
+  "polymer": 1,
+  "water": 1
+ },
+ "file": "1LZN.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 8,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 2457
+ },
+ "operators": 1,
+ "sheetRangeRows": 2,
+ "structConfRows": 8,
+ "structConnByType": {
+  "disulf": 4,
+  "metalc": 5
+ }
+}

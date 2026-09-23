@@ -1,0 +1,35 @@
+{
+ "altlocs": {
+  "A": 175,
+  "B": 172,
+  "C": 34
+ },
+ "assemblies": 1,
+ "atomSiteRows": 843,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 272,
+  "H": 419,
+  "N": 64,
+  "O": 82,
+  "S": 6
+ },
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "1EJG.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 1,
+ "microheterogeneousPositions": 2,
+ "models": {
+  "1": 843
+ },
+ "operators": 1,
+ "sheetRangeRows": 2,
+ "structConfRows": 2,
+ "structConnByType": {
+  "disulf": 3
+ }
+}

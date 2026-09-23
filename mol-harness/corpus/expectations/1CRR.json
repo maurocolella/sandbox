@@ -1,0 +1,54 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 53440,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 16680,
+  "H": 26320,
+  "MG": 20,
+  "N": 4660,
+  "O": 5580,
+  "P": 40,
+  "S": 140
+ },
+ "entityTypes": {
+  "non-polymer": 2,
+  "polymer": 1,
+  "water": 1
+ },
+ "file": "1CRR.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 4,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "21": 2672,
+  "22": 2672,
+  "23": 2672,
+  "24": 2672,
+  "25": 2672,
+  "26": 2672,
+  "27": 2672,
+  "28": 2672,
+  "29": 2672,
+  "30": 2672,
+  "31": 2672,
+  "32": 2672,
+  "33": 2672,
+  "34": 2672,
+  "35": 2672,
+  "36": 2672,
+  "37": 2672,
+  "38": 2672,
+  "39": 2672,
+  "40": 2672
+ },
+ "operators": 1,
+ "sheetRangeRows": 5,
+ "structConfRows": 5,
+ "structConnByType": {
+  "metalc": 7
+ }
+}

@@ -1,0 +1,30 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 2440800,
+ "authAsymCount": 1356,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 1537704,
+  "N": 429852,
+  "O": 455616,
+  "S": 17628
+ },
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "3J3Q.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 1356,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 2440800
+ },
+ "operators": 1,
+ "sheetRangeRows": 2019,
+ "structConfRows": 16946,
+ "structConnByType": {
+  "disulf": 1356
+ }
+}

@@ -1,0 +1,32 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 237685,
+ "authAsymCount": 89,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 125468,
+  "N": 43249,
+  "O": 61959,
+  "P": 6507,
+  "S": 502
+ },
+ "entityTypes": {
+  "polymer": 87
+ },
+ "file": "4V6X.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 89,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 237685
+ },
+ "operators": 1,
+ "sheetRangeRows": 468,
+ "structConfRows": 462,
+ "structConnByType": {
+  "disulf": 4,
+  "hydrog": 5197
+ }
+}

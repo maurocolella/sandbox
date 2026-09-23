@@ -1,0 +1,21 @@
+{
+ "altlocs": {},
+ "assemblies": 0,
+ "atomSiteRows": 0,
+ "authAsymCount": 0,
+ "branchSchemeRows": 0,
+ "elements": {},
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "8ZZ8.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 0,
+ "microheterogeneousPositions": 0,
+ "models": {},
+ "operators": 0,
+ "sheetRangeRows": 0,
+ "structConfRows": 0,
+ "structConnByType": {}
+}

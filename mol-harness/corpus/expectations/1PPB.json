@@ -1,0 +1,33 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 2819,
+ "authAsymCount": 2,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 1532,
+  "N": 424,
+  "O": 848,
+  "S": 15
+ },
+ "entityTypes": {
+  "non-polymer": 1,
+  "polymer": 2,
+  "water": 1
+ },
+ "file": "1PPB.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 392,
+ "labelAsymCount": 5,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 2819
+ },
+ "operators": 1,
+ "sheetRangeRows": 14,
+ "structConfRows": 9,
+ "structConnByType": {
+  "covale": 2,
+  "disulf": 4
+ }
+}

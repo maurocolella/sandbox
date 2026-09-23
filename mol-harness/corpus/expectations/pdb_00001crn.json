@@ -1,0 +1,30 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 327,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 202,
+  "N": 55,
+  "O": 64,
+  "S": 6
+ },
+ "entityTypes": {
+  "polymer": 1
+ },
+ "file": "pdb_00001crn.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 1,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 327
+ },
+ "operators": 1,
+ "sheetRangeRows": 2,
+ "structConfRows": 2,
+ "structConnByType": {
+  "disulf": 3
+ }
+}

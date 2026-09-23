@@ -1,0 +1,36 @@
+{
+ "altlocs": {},
+ "assemblies": 1,
+ "atomSiteRows": 1821,
+ "authAsymCount": 1,
+ "branchSchemeRows": 0,
+ "elements": {
+  "C": 746,
+  "MG": 6,
+  "MN": 3,
+  "N": 294,
+  "O": 696,
+  "P": 76
+ },
+ "entityTypes": {
+  "non-polymer": 2,
+  "polymer": 1,
+  "water": 1
+ },
+ "file": "1EHZ.cif.gz",
+ "gemmiVersion": "0.7.5",
+ "insertionCodeAtoms": 0,
+ "labelAsymCount": 11,
+ "microheterogeneousPositions": 0,
+ "models": {
+  "1": 1821
+ },
+ "operators": 1,
+ "sheetRangeRows": 0,
+ "structConfRows": 0,
+ "structConnByType": {
+  "covale": 25,
+  "hydrog": 70,
+  "metalc": 47
+ }
+}
