@@ -2,6 +2,7 @@
 export type HeuristicWorkerInput = {
   positions: Float32Array;
   covR: Float32Array;
+  alt: Uint16Array; // altLoc char code per atom, 0 = none
   offsets: Uint32Array;
   members: Uint32Array;
   cellKeys: string[];
@@ -24,7 +25,7 @@ function buildKeyToSlot(cellKeys: string[]): Map<string, number> {
 }
 
 self.onmessage = (e: any) => {
-  const { positions, covR, offsets, members, cellKeys, rangeStart, rangeEnd, slack, minDist2 } = e.data as HeuristicWorkerInput;
+  const { positions, covR, alt, offsets, members, cellKeys, rangeStart, rangeEnd, slack, minDist2 } = e.data as HeuristicWorkerInput;
   const keyToSlot = buildKeyToSlot(cellKeys);
 
   const aArr: number[] = [];
@@ -48,10 +49,13 @@ self.onmessage = (e: any) => {
         const iA = members[ia]!;
         const xi = positions[iA * 3], yi = positions[iA * 3 + 1], zi = positions[iA * 3 + 2];
         const ri = covR[iA]!;
+        const altA = alt[iA]!;
         const sameCell = s === t;
         const jb = sameCell ? ia + 1 : startB;
         for (let ib = jb; ib < endB; ib++) {
           const iB = members[ib]!;
+          const altB = alt[iB]!;
+          if (altA !== 0 && altB !== 0 && altA !== altB) continue; // different conformers never bond
           const xj = positions[iB * 3], yj = positions[iB * 3 + 1], zj = positions[iB * 3 + 2];
           const dxv = xi - xj, dyv = yi - yj, dzv = zi - zj;
           const d2 = dxv * dxv + dyv * dyv + dzv * dzv;

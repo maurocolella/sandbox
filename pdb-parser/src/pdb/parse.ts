@@ -54,6 +54,9 @@ async function constructBondsParallel(
     const cellCounts = new Map<string, number>();
     const covR = new Float32Array(count);
     for (let i = 0; i < count; i++) covR[i] = covalentRadius(finalAtoms[i]!.element);
+    // Atoms of different alternate conformers never bond (a shared atom, altLoc blank, bonds with each)
+    const alt = new Uint16Array(count);
+    for (let i = 0; i < count; i++) alt[i] = finalAtoms[i]!.altLoc ? finalAtoms[i]!.altLoc.charCodeAt(0) : 0;
     for (let i = 0; i < count; i++) {
       const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
       const k = `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
@@ -93,6 +96,7 @@ async function constructBondsParallel(
 
       const positionsShared = makeShared(positions);
       const covRShared = makeShared(covR);
+      const altShared = makeShared(alt);
       const offsetsShared = makeShared(offsets);
       const membersShared = makeShared(members);
 
@@ -110,11 +114,19 @@ async function constructBondsParallel(
           worker.onerror = (err: unknown) => { reject(err); worker.terminate(); };
         });
         promises.push(p);
-        const payload = { positions: positionsShared, covR: covRShared, offsets: offsetsShared, members: membersShared, cellKeys, rangeStart: startS, rangeEnd: endS, slack, minDist2 };
+        const payload = { positions: positionsShared, covR: covRShared, alt: altShared, offsets: offsetsShared, members: membersShared, cellKeys, rangeStart: startS, rangeEnd: endS, slack, minDist2 };
         worker.postMessage(payload);
       }
       const results = await Promise.all(promises);
-      for (const { a, b, o } of results) for (let i = 0; i < a.length; i++) bondPairs.push([a[i]!, b[i]!, o[i]!] as [number, number, number]);
+      // Workers see no CONECT bonds: skip pairs already present so they aren't listed twice
+      for (const { a, b, o } of results) {
+        for (let i = 0; i < a.length; i++) {
+          const key = `${a[i]!}|${b[i]!}`;
+          if (bondSet.has(key)) continue;
+          bondSet.add(key);
+          bondPairs.push([a[i]!, b[i]!, o[i]!] as [number, number, number]);
+        }
+      }
       W.add(`Heuristic bonding (parallel) created ${bondPairs.length} total bonds`);
     } else {
       // Fallback to local processing in this thread
@@ -135,10 +147,13 @@ async function constructBondsParallel(
               const iA = members[ia]!;
               const xi = positions[iA * 3], yi = positions[iA * 3 + 1], zi = positions[iA * 3 + 2];
               const ri = covR[iA]!;
+              const altA = alt[iA]!;
               const sameCell = s === t;
               const jb = sameCell ? ia + 1 : startB;
               for (let ib = jb; ib < endB; ib++) {
                 const iB = members[ib]!;
+                const altB = alt[iB]!;
+                if (altA !== 0 && altB !== 0 && altA !== altB) continue;
                 const xj = positions[iB * 3], yj = positions[iB * 3 + 1], zj = positions[iB * 3 + 2];
                 const dxv = xi - xj, dyv = yi - yj, dzv = zi - zj;
                 const d2 = dxv * dxv + dyv * dyv + dzv * dzv;
@@ -579,6 +594,9 @@ function constructBonds(
     const cellCounts = new Map<string, number>();
     const covR = new Float32Array(count);
     for (let i = 0; i < count; i++) covR[i] = covalentRadius(finalAtoms[i]!.element);
+    // Atoms of different alternate conformers never bond (a shared atom, altLoc blank, bonds with each)
+    const alt = new Uint16Array(count);
+    for (let i = 0; i < count; i++) alt[i] = finalAtoms[i]!.altLoc ? finalAtoms[i]!.altLoc.charCodeAt(0) : 0;
     for (let i = 0; i < count; i++) {
       const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
       const k = `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
@@ -615,10 +633,13 @@ function constructBonds(
             const iA = members[ia]!;
             const xi = positions[iA * 3], yi = positions[iA * 3 + 1], zi = positions[iA * 3 + 2];
             const ri = covR[iA]!;
+              const altA = alt[iA]!;
             const sameCell = s === t;
             const jb = sameCell ? ia + 1 : startB;
             for (let ib = jb; ib < endB; ib++) {
               const iB = members[ib]!;
+                const altB = alt[iB]!;
+                if (altA !== 0 && altB !== 0 && altA !== altB) continue;
               const xj = positions[iB * 3], yj = positions[iB * 3 + 1], zj = positions[iB * 3 + 2];
               const dxv = xi - xj, dyv = yi - yj, dzv = zi - zj;
               const d2 = dxv * dxv + dyv * dyv + dzv * dzv;
