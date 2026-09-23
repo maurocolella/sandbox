@@ -12,7 +12,9 @@ It uses the built parser (`pdb-parser/dist`), so build that first: `pnpm --filte
 
 ## Layout
 
-- `tests/`: corpus-scale tests. `pdb-bulk.spec.ts` parses every harvested `.pdb` file.
+- `tests/`: corpus-scale tests.
+  - `pdb-bulk.spec.ts`: parses every harvested `.pdb` file.
+  - `cif-tokenize.spec.ts`: checks the `cif-parser` tokenizer against gemmi on the syntax cases, and streams every `fixtures/cif` entry through gunzip. It compares `_atom_site` row counts with the expectations, and token-stream hashes across whole-buffer and chunked input. Run it with `pnpm --filter mol-harness test:cif`; add `CIF_GIANTS=1` to include 36ZA, 9FQR and 8GLV.
 - `corpus/tricky.tsv`: verified tricky entries with the property each one exercises. It lists IDs only; fetch the files with `mol-crawler`.
 - `corpus/expectations/*.json`: gemmi-recorded expectations for each tricky entry (gemmi 0.7.5), the oracle loader tests compare against. The fixtures themselves live in the gitignored `../fixtures/cif/` (43 entries, 609 MB gzipped); see the `mol-crawler` README for the fetch command.
 - `fixtures/cif-syntax/cases.json`: CIF edge-case inputs with gemmi's reading as the reference. Our tolerant parser deliberately differs in places, so tests say so explicitly.

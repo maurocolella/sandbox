@@ -3,6 +3,7 @@ packages:
   - mol-viewer
   - chem-surface
   - pdb-parser
+  - cif-parser
   - mol-harness
 
 onlyBuiltDependencies:

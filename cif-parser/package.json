@@ -1,0 +1,31 @@
+{
+  "name": "cif-parser",
+  "version": "0.1.0",
+  "description": "Minimal-dependency CIF / mmCIF / BinaryCIF reader for the browser and workers: byte-level, streaming, columnar.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "prepare": "pnpm run build",
+    "clean": "rm -rf dist",
+    "test": "pnpm run build && vitest run"
+  },
+  "author": "Mauro Colella <mauro.l.colella@gmail.com>",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "vitest": "^1.6.0"
+  },
+  "license": "Apache-2.0"
+}

@@ -9,9 +9,11 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:pdb": "vitest run tests/pdb-bulk.spec.ts"
+    "test:pdb": "vitest run tests/pdb-bulk.spec.ts",
+    "test:cif": "vitest run tests/cif-tokenize.spec.ts"
   },
   "dependencies": {
+    "cif-parser": "workspace:*",
     "pdb-parser": "workspace:*"
   },
   "devDependencies": {

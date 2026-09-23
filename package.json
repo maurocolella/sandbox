@@ -11,6 +11,7 @@
     "mol-renderer",
     "chem-surface",
     "pdb-parser",
+    "cif-parser",
     "mol-harness"
   ],
   "scripts": {
@@ -18,6 +19,7 @@
     "build:viewer": "pnpm --filter mol-viewer build",
     "build:renderer": "pnpm --filter mol-renderer build",
     "build:parser": "pnpm --filter pdb-parser build",
+    "build:cif": "pnpm --filter cif-parser build",
     "dev:viewer": "pnpm -C mol-viewer dev",
     "dev:renderer": "pnpm -C mol-renderer dev",
     "test": "pnpm -r test",
