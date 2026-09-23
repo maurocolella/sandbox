@@ -35,7 +35,7 @@ export function MainView() {
     ...(parseOpts.useModelSelection ? { modelSelection: parseOpts.modelSelection as number } : {}),
   }), [parseOpts]);
 
-  const { scene, error, loading } = useMolScene(source.url, parseOptions);
+  const { scene, error, loading } = useMolScene(source.url, parseOptions, source.fallbackUrl);
   const sourceError = error && source.pdbId && /\b404\b/.test(error)
     ? `No entry ${source.pdbId} on RCSB.`
     : error;
