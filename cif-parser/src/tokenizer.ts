@@ -61,6 +61,9 @@ export class CifTokenizer {
   start = 0;
   end = 0;
   valueKind: ValueKindType = ValueKind.Bare;
+  /** Raw extent of the current token including quotes / text-field delimiters (for re-tokenizing ranges). */
+  rawStart = 0;
+  rawEnd = 0;
   /** Line (1-based) where the current token starts. */
   line = 1;
   /** True when the input declares CIF 2.0 (not supported yet; tokenized with CIF 1.1 rules). */
@@ -104,6 +107,23 @@ export class CifTokenizer {
     const t = new CifTokenizer();
     t.push(bytes);
     t.finish();
+    return t;
+  }
+
+  /**
+   * Tokenize bytes [start, end) of an already-indexed buffer, resuming mid-file: the line number is given,
+   * and whether `start` is at a line start is inferred from the preceding byte (so a mid-line ';' stays a
+   * bare value). No BOM or magic-header handling.
+   */
+  static range(bytes: Uint8Array, start: number, end: number, line: number): CifTokenizer {
+    const t = new CifTokenizer();
+    t.buffer = bytes;
+    t.len = end;
+    t.pos = start;
+    t.final = true;
+    t.started = true;
+    t.curLine = line;
+    t.bol = start === 0 || bytes[start - 1] === LF || bytes[start - 1] === CR;
     return t;
   }
 
@@ -171,6 +191,7 @@ export class CifTokenizer {
     const s = pos;
     const c = buf[s]!;
     this.line = this.curLine;
+    this.rawStart = s;
 
     // Text field: ';' in column 1
     if (c === SEMI && this.bol) {
@@ -242,6 +263,7 @@ export class CifTokenizer {
     this.bol = false;
     this.start = s;
     this.end = q;
+    this.rawEnd = q;
     this.valueKind = ValueKind.Bare;
     if (c === UNDERSCORE) return (this.kind = Tok.Tag);
 
@@ -265,6 +287,7 @@ export class CifTokenizer {
   private emitValue(start: number, end: number, next: number, vk: ValueKindType, lines: number): TokKind {
     this.start = start;
     this.end = end;
+    this.rawEnd = next;
     this.valueKind = vk;
     this.pos = next;
     this.curLine += lines;

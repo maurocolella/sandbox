@@ -2,7 +2,29 @@
 
 A minimal-dependency CIF, mmCIF and BinaryCIF reader for the browser and web workers. It works on bytes, can stream, and exposes data as columns. The design follows `whitepapers/mmcif-parser.md`.
 
-Status: **tokenizer only**. The category and column layer, BinaryCIF decoding and the mmCIF-to-`MolScene` loader come next.
+Status: **tokenizer, plus the document, category and column layer**. BinaryCIF decoding and the mmCIF-to-`MolScene` loader come next.
+
+## Documents, categories and columns
+
+```ts
+import { parseCif, Presence } from "cif-parser";
+
+const doc = parseCif(bytes, { decode: { atom_site: {             // optional eager decode, one pass
+  x: { field: "Cartn_x", type: "f32" }, atom: { field: "label_atom_id", type: "str" }, seq: { field: "label_seq_id", type: "i32" },
+} } });
+const block = doc.blocks[0];
+const site = block.category("atom_site");                        // case-insensitive, "_" optional
+site.decoded.x.values;                                           // Float32Array
+site.decoded.atom.values, site.decoded.atom.dictionary;          // Uint32Array codes + string[]
+site.decoded.seq.mask;                                           // Presence per row, only if any '.'/'?'
+block.category("struct")?.getField("title")?.str(0);             // lazy per-field access
+```
+
+- **Indexing** (`parseCif`) makes one pass and stores no values. It records blocks, save frames, categories, tags, row counts and each loop's byte range, so memory stays near the file size.
+- **Lazy access.** `getField()` tokenizes a category the first time it's used and gives `str`, `int`, `float` and `valueKind` per row. `valueKind` is 0 (present), 1 (`.`) or 2 (`?`), the same convention as BinaryCIF masks.
+- **Column decoding.** `decodeColumns(spec)`, or `decode` at parse time, writes straight into Float32/Float64/Int32 arrays or interned string codes, with masks only where nulls exist. Numbers are parsed from bytes and are bit-identical to `Number()` (Clinger fast path); a trailing `(su)` is ignored.
+- **Leniency.** Structural problems produce warnings rather than failures: a tag without a value (read as `?`), a loop value count that isn't a multiple of its columns, duplicate tags (last wins) or categories, values before any block, mixed-category loops, `global_`, and `stop_`.
+- **Speed.** Parsing plus an eager 18-column `_atom_site` decode takes 3J3Q (242 MB, 2.44 M atoms) in 1.3 s and 36ZA (1.2 GB, 11.2 M atoms) in 6.9 s. Measure with `node bench/document.mjs file.cif.gz`.
 
 ## Tokenizer
 
