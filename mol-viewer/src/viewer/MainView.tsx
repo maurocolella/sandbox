@@ -5,8 +5,7 @@ import { useRendererControls } from "../lib/hooks/useRendererControls";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { useFilteredScene } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls } from "mol-renderer";
-import * as THREE from "three";
+import type { RenderControls, OverlayControls, SurfaceData } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
 import SurfaceWorker from "chem-surface/worker?worker";
 
@@ -49,7 +48,7 @@ export function MainView() {
 
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
 
-  const [surfaceMesh, setSurfaceMesh] = useState<THREE.Object3D | null>(null);
+  const [surfaceData, setSurfaceData] = useState<SurfaceData | null>(null);
   // Surfaces are generated in a worker; a new request supersedes (terminates) the one in flight
   const surfaceClient = useRef<SurfaceWorkerClient | null>(null);
   useEffect(() => {
@@ -76,65 +75,16 @@ export function MainView() {
     return out;
   }, [filteredScene]);
 
+  // The previous surface stays on screen until the new one arrives; only disabling clears it
   useEffect(() => {
+    const client = surfaceClient.current;
+    if (!surface.enabled || atomsInput.length === 0 || !client) { client?.cancel(); setSurfaceData(null); return; }
     let cancelled = false;
-    async function run() {
-      const client = surfaceClient.current;
-      if (!surface.enabled || atomsInput.length === 0 || !client) { client?.cancel(); setSurfaceMesh(null); return; }
-      const opts = { probeRadius: surface.probeRadius, voxelSize: surface.voxelSize };
-      let geom;
-      try {
-        geom = await client.generate(surface.kind, atomsInput, opts);
-      } catch (e) {
-        if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Surface generation failed", e);
-        return;
-      }
-      if (cancelled) return;
-      const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.BufferAttribute(geom.positions, 3));
-      g.setAttribute("normal", new THREE.BufferAttribute(geom.normals, 3));
-      if (geom.indices) g.setIndex(new THREE.BufferAttribute(geom.indices, 1));
-      const m = new THREE.MeshStandardMaterial({ color: 0x77aaff, metalness: 0.0, roughness: 1.0, transparent: false, opacity: 1.0, depthWrite: true, side: THREE.FrontSide, polygonOffset: surface.wireframe, polygonOffsetFactor: surface.wireframe ? 1 : 0, polygonOffsetUnits: surface.wireframe ? 1 : 0 });
-      const mesh = new THREE.Mesh(g, m);
-      mesh.renderOrder = 1;
-      mesh.frustumCulled = false;
-
-      if (surface.wireframe) {
-        const wfGeo = new THREE.WireframeGeometry(g);
-        const wfMat = new THREE.LineBasicMaterial({ color: 0x111111 });
-        wfMat.depthTest = true;
-        wfMat.depthWrite = false;
-        wfMat.polygonOffset = true;
-        wfMat.polygonOffsetFactor = -2;
-        wfMat.polygonOffsetUnits = -1;
-        const lines = new THREE.LineSegments(wfGeo, wfMat);
-        lines.renderOrder = 2;
-        const group = new THREE.Group();
-        group.add(mesh);
-        group.add(lines);
-        setSurfaceMesh(group);
-      } else {
-        setSurfaceMesh(mesh);
-      }
-    }
-    void run();
-    return () => {
-      cancelled = true;
-      setSurfaceMesh(prev => {
-        if (prev) {
-          prev.traverse(obj => {
-            const anyObj = obj as unknown as { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
-            if (anyObj.geometry) anyObj.geometry.dispose();
-            if (anyObj.material) {
-              if (Array.isArray(anyObj.material)) anyObj.material.forEach(mat => (mat as THREE.Material).dispose?.());
-              else (anyObj.material as THREE.Material).dispose?.();
-            }
-          });
-        }
-        return null;
-      });
-    };
-  }, [atomsInput, surface.enabled, surface.kind, surface.probeRadius, surface.voxelSize, surface.wireframe]);
+    client.generate(surface.kind, atomsInput, { probeRadius: surface.probeRadius, voxelSize: surface.voxelSize })
+      .then((geom) => { if (!cancelled) setSurfaceData(geom); })
+      .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Surface generation failed", e); });
+    return () => { cancelled = true; };
+  }, [atomsInput, surface.enabled, surface.kind, surface.probeRadius, surface.voxelSize]);
 
   const renderControls = useMemo<RenderControls>(() => ({
     renderMode: display.representation as "spheres" | "ribbon-tube" | "ribbon-flat",
@@ -176,7 +126,8 @@ export function MainView() {
             renderControls={renderControls}
             overlayControls={overlayControls}
             visibleChains={selectedChainIndices}
-            surface={surfaceMesh}
+            surfaceData={surfaceData}
+            surfaceWireframe={surface.wireframe}
           />
         </Suspense>
       </div>

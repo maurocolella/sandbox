@@ -93,7 +93,7 @@ export function useRendererControls(): RendererControls {
       kind: { value: "vdw", options: ["vdw", "sas", "ses"] as const },
       probeRadius: { value: 1.4, min: 0.5, max: 3.0, step: 0.1 },
       voxelSize: { value: 0.5, min: 0.25, max: 2.0, step: 0.05 },
-      wireframe: { value: true },
+      wireframe: { value: false },
     },
     { collapsed: true }
   );
