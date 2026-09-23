@@ -383,7 +383,8 @@ function assignAtoms(atoms: Atom[], positions: Float32Array, hash: AtomHash): Ui
   return out;
 }
 
-type Kind = "vdw" | "sas" | "ses";
+export type SurfaceKind = "vdw" | "sas" | "ses";
+type Kind = SurfaceKind;
 
 function generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions): SurfaceGeometry {
   if (atoms.length === 0) return { positions: new Float32Array(0), normals: new Float32Array(0), indices: new Uint32Array(0), atomIndex: new Uint32Array(0) };
@@ -426,4 +427,78 @@ export async function generateSAS(atoms: Atom[], opts: SurfaceOptions = {}): Pro
 
 export async function generateSES(atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
   return generate("ses", atoms, opts);
+}
+
+type WorkerRequest = { id: number; kind: Kind; atoms: Atom[]; options?: Omit<SurfaceOptions, "signal"> };
+type WorkerResponse =
+  | { id: number; ok: true; positions: ArrayBuffer; normals: ArrayBuffer; indices?: ArrayBuffer; atomIndex?: ArrayBuffer }
+  | { id: number; ok: false; error: string };
+
+/**
+ * Runs surface generation off the main thread (pair with the `chem-surface/worker` entry).
+ * Only the latest request matters: starting a new one, or aborting via `signal`, terminates the busy
+ * worker (generation is synchronous, so it can't be interrupted otherwise) and rejects with AbortError.
+ */
+export class SurfaceWorkerClient {
+  private worker: Worker | null = null;
+  private nextId = 1;
+  private pending: { id: number; resolve: (g: SurfaceGeometry) => void; reject: (e: unknown) => void } | null = null;
+
+  constructor(private createWorker: () => Worker) {}
+
+  generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
+    this.cancel();
+    const { signal, ...options } = opts;
+    if (signal?.aborted) return Promise.reject(new DOMException("Surface generation aborted", "AbortError"));
+    const worker = this.ensureWorker();
+    const id = this.nextId++;
+    return new Promise<SurfaceGeometry>((resolve, reject) => {
+      this.pending = { id, resolve, reject };
+      signal?.addEventListener("abort", () => { if (this.pending?.id === id) this.cancel(); }, { once: true });
+      worker.postMessage({ id, kind, atoms, options } satisfies WorkerRequest);
+    });
+  }
+
+  /** Abort the in-flight request, if any. */
+  cancel() {
+    if (!this.pending) return;
+    const { reject } = this.pending;
+    this.pending = null;
+    this.worker?.terminate();
+    this.worker = null;
+    reject(new DOMException("Surface generation aborted", "AbortError"));
+  }
+
+  dispose() {
+    this.cancel();
+    this.worker?.terminate();
+    this.worker = null;
+  }
+
+  private ensureWorker(): Worker {
+    if (this.worker) return this.worker;
+    const worker = this.createWorker();
+    worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
+      const res = ev.data;
+      if (!this.pending || this.pending.id !== res.id) return;
+      const { resolve, reject } = this.pending;
+      this.pending = null;
+      if (!res.ok) { reject(new Error(res.error)); return; }
+      resolve({
+        positions: new Float32Array(res.positions),
+        normals: new Float32Array(res.normals),
+        indices: res.indices ? new Uint32Array(res.indices) : undefined,
+        atomIndex: res.atomIndex ? new Uint32Array(res.atomIndex) : undefined,
+      });
+    };
+    worker.onerror = (ev) => {
+      const pending = this.pending;
+      this.pending = null;
+      this.worker?.terminate();
+      this.worker = null;
+      pending?.reject(new Error(ev.message || "Surface worker failed"));
+    };
+    this.worker = worker;
+    return worker;
+  }
 }

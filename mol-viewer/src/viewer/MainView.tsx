@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useMemo, useState, useEffect } from "react";
+import { Suspense, useCallback, useMemo, useState, useEffect, useRef } from "react";
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import { useRendererControls } from "../lib/hooks/useRendererControls";
@@ -7,7 +7,8 @@ import { useFilteredScene } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
 import type { RenderControls, OverlayControls } from "mol-renderer";
 import * as THREE from "three";
-import { generateVDW, generateSAS, generateSES, type Atom } from "chem-surface";
+import { SurfaceWorkerClient, type Atom } from "chem-surface";
+import SurfaceWorker from "chem-surface/worker?worker";
 
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 import { Leva } from "leva";
@@ -49,6 +50,13 @@ export function MainView() {
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
 
   const [surfaceMesh, setSurfaceMesh] = useState<THREE.Object3D | null>(null);
+  // Surfaces are generated in a worker; a new request supersedes (terminates) the one in flight
+  const surfaceClient = useRef<SurfaceWorkerClient | null>(null);
+  useEffect(() => {
+    const client = new SurfaceWorkerClient(() => new SurfaceWorker());
+    surfaceClient.current = client;
+    return () => { client.dispose(); surfaceClient.current = null; };
+  }, []);
 
   const atomsInput = useMemo<Atom[]>(() => {
     const s = filteredScene;
@@ -71,11 +79,16 @@ export function MainView() {
   useEffect(() => {
     let cancelled = false;
     async function run() {
-      if (!surface.enabled || atomsInput.length === 0) { setSurfaceMesh(null); return; }
+      const client = surfaceClient.current;
+      if (!surface.enabled || atomsInput.length === 0 || !client) { client?.cancel(); setSurfaceMesh(null); return; }
       const opts = { probeRadius: surface.probeRadius, voxelSize: surface.voxelSize };
-      const geom = surface.kind === "vdw" ? await generateVDW(atomsInput, opts)
-        : surface.kind === "sas" ? await generateSAS(atomsInput, opts)
-        : await generateSES(atomsInput, opts);
+      let geom;
+      try {
+        geom = await client.generate(surface.kind, atomsInput, opts);
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Surface generation failed", e);
+        return;
+      }
       if (cancelled) return;
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.BufferAttribute(geom.positions, 3));
