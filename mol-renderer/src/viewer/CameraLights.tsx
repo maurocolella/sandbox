@@ -30,10 +30,10 @@ export function CameraLights() {
 
   return (
     <>
-      <hemisphereLight args={["#ffffff", "#2a2e36", 0.85]} />
+      <hemisphereLight args={["#ffffff", "#40444c", 1.0]} />
       <group ref={rig}>
-        <directionalLight ref={key} position={[-1.2, 1.4, 0.6]} intensity={1.9} />
-        <directionalLight ref={fill} position={[1.4, -0.8, 0.4]} intensity={0.35} />
+        <directionalLight ref={key} position={[-1.2, 1.4, 0.6]} intensity={1.6} />
+        <directionalLight ref={fill} position={[1.4, -0.8, 0.4]} intensity={0.5} />
         <object3D ref={target} position={[0, 0, -1]} />
       </group>
     </>
