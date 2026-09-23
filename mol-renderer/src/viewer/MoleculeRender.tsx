@@ -21,6 +21,7 @@ import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 import { GridRaycast, type BBox } from "./GridRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { CameraLights } from "./CameraLights";
+import { RenderStats, type RenderStatsInfo } from "./RenderStats";
 
 interface MoleculeRenderProps {
   background: string;
@@ -31,6 +32,8 @@ interface MoleculeRenderProps {
   surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
+  /** Called when the triangles / draw calls of the last frame change. */
+  onRenderStats?: (stats: RenderStatsInfo) => void;
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
@@ -117,6 +120,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     >
       <color attach="background" args={[props.background]} />
       <CameraLights />
+      {props.onRenderStats && <RenderStats onStats={props.onRenderStats} />}
       <OrbitControls
         ref={(ctrl) => {
           // ctrl is OrbitControls from drei; store minimal fields we use

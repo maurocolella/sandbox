@@ -5,7 +5,7 @@ import { useRendererControls } from "../lib/hooks/useRendererControls";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { useFilteredScene } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls, SurfaceData } from "mol-renderer";
+import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
 import SurfaceWorker from "chem-surface/worker?worker";
 
@@ -64,6 +64,7 @@ export function MainView() {
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
 
   const [surfaceData, setSurfaceData] = useState<SurfaceData | null>(null);
+  const [renderStats, setRenderStats] = useState<RenderStatsInfo | null>(null);
   // Surfaces are generated in a worker; a new request supersedes (terminates) the one in flight
   const surfaceClient = useRef<SurfaceWorkerClient | null>(null);
   useEffect(() => {
@@ -146,6 +147,7 @@ export function MainView() {
             surfaceData={surfaceData}
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
+            onRenderStats={setRenderStats}
           />
         </Suspense>
       </div>
@@ -155,6 +157,7 @@ export function MainView() {
             <div className="mb-1 text-sm font-semibold">Model</div>
             <div className="text-xs">Atoms: {atomCount.toLocaleString()}</div>
             <div className="text-xs">Bonds: {bondCount.toLocaleString()}</div>
+            {renderStats && <div className="text-xs">Triangles: {renderStats.triangles.toLocaleString()}</div>}
           </div>
         </div>
       )}
