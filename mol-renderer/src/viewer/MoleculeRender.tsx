@@ -6,7 +6,7 @@
 */
 import { Suspense, useEffect, useRef, useCallback } from "react";
 import { Canvas, invalidate } from "@react-three/fiber";
-import { OrbitControls, AdaptiveDpr, Preload } from "@react-three/drei";
+import { OrbitControls, AdaptiveDpr, Preload, StatsGl } from "@react-three/drei";
 import type { MolScene } from "pdb-parser";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
@@ -35,6 +35,10 @@ interface MoleculeRenderProps {
   surfaceOpacity?: number; // 0..1, 1 = opaque
   /** Called when the triangles / draw calls of the last frame change. */
   onRenderStats?: (stats: RenderStatsInfo) => void;
+  /** Show the stats-gl panel (FPS, CPU and GPU frame time); className positions it (the panel has no styles of its own). */
+  stats?: { className?: string } | false;
+  /** Render every frame instead of on demand (for measuring sustained FPS). */
+  continuousRender?: boolean;
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
@@ -110,7 +114,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
 
   return (
     <Canvas
-      frameloop="demand"
+      frameloop={props.continuousRender ? "always" : "demand"}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
       dpr={[1, Math.min(window.devicePixelRatio || 1, 2)]}
       camera={{ position: [0, 0, 100], near: 0.1, far: 5000 }}
@@ -118,6 +122,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     >
       <color attach="background" args={[props.background]} />
       <CameraLights />
+      {props.stats && <StatsGl className={props.stats.className} trackGPU />}
       {props.onRenderStats && <RenderStats onStats={props.onRenderStats} />}
       <OrbitControls
         ref={(ctrl) => {

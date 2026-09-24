@@ -24,6 +24,8 @@ export interface RendererControls {
     atoms: boolean;
     bonds: boolean;
     backbone: boolean;
+    fps: boolean;
+    continuousRender: boolean;
   };
   surface: {
     enabled: boolean;
@@ -87,6 +89,9 @@ export function useRendererControls(): RendererControls {
       value: true,
       render: (get) => get("Display.representation") === "spheres",
     },
+    fps: true,
+    // On-demand rendering makes FPS track input events; render continuously to measure sustained FPS
+    continuousRender: false,
   });
 
   const surface = useControls(
@@ -165,6 +170,8 @@ export function useRendererControls(): RendererControls {
       atoms: Boolean(display.atoms),
       bonds: Boolean(display.bonds),
       backbone: Boolean(display.backbone),
+      fps: Boolean(display.fps),
+      continuousRender: Boolean(display.continuousRender),
     },
     surface: {
       enabled: Boolean(surface.enabled),
