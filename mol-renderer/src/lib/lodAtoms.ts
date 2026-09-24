@@ -1,6 +1,6 @@
 /*
- Title: chunkedAtoms
- Description: Chunked, level-of-detail atom spheres and bond cylinders built on `chunked`.
+ Title: lodAtoms
+ Description: Level-of-detail atom spheres and bond cylinders built on `instancedLod`.
  - Atoms: icosphere levels of 1280 / 720 / 320 / 80 / 20 triangles.
  - Bonds: open-ended cylinders (the atom spheres cover the ends) with 12 / 8 / 5 / 3 sides, hidden once
    thinner than a quarter pixel.
@@ -8,7 +8,7 @@
 */
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { buildChunked, type ChunkedInstances } from "./chunked";
+import { buildLodInstances, type LodInstances } from "./instancedLod";
 
 /**
  * Indexed icosphere with exact sphere normals. Three's IcosahedronGeometry is non-indexed (3 vertices per
@@ -45,7 +45,7 @@ const minPxFor = (errors: number[]) => errors.slice(1).map((e) => MAX_ERROR_PX /
 const SPHERE_MIN_PX = minPxFor(SPHERE_DETAIL.map(sphereError)); // ~88, 39, 9.9, 2.5 px
 const BOND_MIN_PX = [...minPxFor(BOND_SIDES.map(bondError)), HIDE_BOND_PX]; // ~6.6, 2.6, 1.0, 0.25 px
 
-export interface ChunkedAtomsInput {
+export interface LodAtomsInput {
   count: number;
   positions: Float32Array;
   radii: Float32Array;
@@ -54,11 +54,10 @@ export interface ChunkedAtomsInput {
   material: THREE.Material;
 }
 
-export function buildChunkedAtoms(input: ChunkedAtomsInput): ChunkedInstances {
+export function buildLodAtoms(input: LodAtomsInput): LodInstances {
   const { positions, radii, colors, radiusScale } = input;
-  return buildChunked({
+  return buildLodInstances({
     count: input.count,
-    point: (i, a) => positions[i * 3 + a]!,
     writeMatrix: (i, m, o) => {
       const r = radii[i]! * radiusScale;
       m[o] = r; m[o + 1] = 0; m[o + 2] = 0; m[o + 3] = 0;
@@ -74,7 +73,7 @@ export function buildChunkedAtoms(input: ChunkedAtomsInput): ChunkedInstances {
   });
 }
 
-export interface ChunkedBondsInput {
+export interface LodBondsInput {
   count: number;
   indexA: ArrayLike<number>;
   indexB: ArrayLike<number>;
@@ -83,13 +82,12 @@ export interface ChunkedBondsInput {
   material: THREE.Material;
 }
 
-export function buildChunkedBonds(input: ChunkedBondsInput): ChunkedInstances {
+export function buildLodBonds(input: LodBondsInput): LodInstances {
   const { indexA, indexB, positions, radius } = input;
   const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), q = new THREE.Quaternion();
   const pos = new THREE.Vector3(), scale = new THREE.Vector3(), mat = new THREE.Matrix4();
-  return buildChunked({
+  return buildLodInstances({
     count: input.count,
-    point: (i, a) => (positions[indexA[i]! * 3 + a]! + positions[indexB[i]! * 3 + a]!) / 2,
     writeMatrix: (i, m, o) => {
       const a = indexA[i]! * 3, b = indexB[i]! * 3;
       dir.set(positions[b]! - positions[a]!, positions[b + 1]! - positions[a + 1]!, positions[b + 2]! - positions[a + 2]!);

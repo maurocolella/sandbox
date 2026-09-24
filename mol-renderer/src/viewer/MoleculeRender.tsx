@@ -101,7 +101,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     onOut();
   }, [onOut]);
 
-  // Ensure the backbone does not steal pointer events (chunked atoms/bonds disable raycasting themselves)
+  // Ensure the backbone does not steal pointer events (atoms/bonds disable raycasting themselves)
   useEffect(() => {
     if (objects.backbone) {
       (objects.backbone as unknown as { raycast?: (...args: unknown[]) => void }).raycast = () => { };
@@ -149,7 +149,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
               {props.renderControls.showBonds && objects.bonds && (
-                <InstancesLod key={keys.bonds} set={objects.bonds} triangleBudget={props.renderControls.sphereTriangleBudget * 0.4} />
+                <InstancesLod key={keys.bonds} set={objects.bonds} />
               )}
               {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
@@ -160,10 +160,10 @@ export function MoleculeRender(props: MoleculeRenderProps) {
                 <InstancesLod
                   key={keys.atoms}
                   set={objects.atoms}
-                  triangleBudget={props.renderControls.sphereTriangleBudget * 0.6}
+                 
                 />
               )}
-              {props.renderControls.showBonds && objects.bonds && <InstancesLod key={keys.bonds} set={objects.bonds} triangleBudget={props.renderControls.sphereTriangleBudget * 0.4} />}
+              {props.renderControls.showBonds && objects.bonds && <InstancesLod key={keys.bonds} set={objects.bonds} />}
               {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
               {isSpheres && hoverAtomOverlay && (
                 <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />

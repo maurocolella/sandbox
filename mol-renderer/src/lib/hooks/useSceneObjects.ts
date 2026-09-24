@@ -7,8 +7,8 @@ import { useEffect, useMemo } from "react";
 import type { MolScene, AtomMeshOptions, BackboneLineOptions } from "pdb-parser";
 import { makeBackboneLines } from "pdb-parser";
 import { FrontSide, MeshStandardMaterial, type LineSegments, type Material } from "three";
-import { buildChunkedAtoms, buildChunkedBonds } from "../chunkedAtoms";
-import type { ChunkedInstances } from "../chunked";
+import { buildLodAtoms, buildLodBonds } from "../lodAtoms";
+import type { LodInstances } from "../instancedLod";
 
 export interface SceneBuildOptions {
   atoms: AtomMeshOptions | false;
@@ -18,15 +18,15 @@ export interface SceneBuildOptions {
 
 export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions) {
   const objects = useMemo(() => {
-    if (!scene) return { atoms: undefined as ChunkedInstances | undefined, bonds: undefined as ChunkedInstances | undefined, backbone: undefined as LineSegments | undefined };
+    if (!scene) return { atoms: undefined as LodInstances | undefined, bonds: undefined as LodInstances | undefined, backbone: undefined as LineSegments | undefined };
 
-    let atoms: ChunkedInstances | undefined;
-    let bonds: ChunkedInstances | undefined;
+    let atoms: LodInstances | undefined;
+    let bonds: LodInstances | undefined;
     let backbone: LineSegments | undefined;
 
     if (opts.atoms !== false) {
       const material = new MeshStandardMaterial({ color: 0xffffff, metalness: 0, roughness: 0.5, side: FrontSide });
-      atoms = buildChunkedAtoms({
+      atoms = buildLodAtoms({
         count: scene.atoms.count,
         positions: scene.atoms.positions,
         radii: scene.atoms.radii,
@@ -36,7 +36,7 @@ export function useSceneObjects(scene: MolScene | null, opts: SceneBuildOptions)
       });
     }
     if (opts.bonds && scene.bonds && scene.bonds.count > 0) {
-      bonds = buildChunkedBonds({
+      bonds = buildLodBonds({
         count: scene.bonds.count,
         indexA: scene.bonds.indexA,
         indexB: scene.bonds.indexB,
