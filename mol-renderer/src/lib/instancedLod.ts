@@ -9,7 +9,8 @@
    threshold don't flicker. A null level hides the instance.
  - A bounding-sphere hierarchy (k-d split, midpoint of the longest axis) over the instances skips nodes
    outside the view, and gives a whole node one level when all of its instances would get it anyway, so
-   only leaves straddling a threshold are visited instance by instance.
+   only leaves straddling a threshold are visited instance by instance. Nearer nodes are visited first, so
+   each level draws roughly front to back.
  - The index lists are rebuilt when the view changes, and only the part that differs from the last upload
    is sent to the GPU.
 */
@@ -273,8 +274,14 @@ export function updateLod(set: LodInstances, camera: THREE.Camera, viewportHeigh
     const left = nodeLeft[n]!;
     if (left >= 0) {
       if (top + 2 > stack.length) { const s = new Int32Array(stack.length * 2); s.set(stack); stack = s; }
-      stack[top++] = nodeRight[n]!;
-      stack[top++] = left;
+      // Nearer child last, so it is visited first: lists run roughly front to back, and the depth test
+      // rejects hidden pixels before they are shaded
+      const right = nodeRight[n]!;
+      const lx = nodeSphere[left * 4]! - cx, ly = nodeSphere[left * 4 + 1]! - cy, lz = nodeSphere[left * 4 + 2]! - cz;
+      const rx = nodeSphere[right * 4]! - cx, ry = nodeSphere[right * 4 + 1]! - cy, rz = nodeSphere[right * 4 + 2]! - cz;
+      const leftNearer = lx * lx + ly * ly + lz * lz <= rx * rx + ry * ry + rz * rz;
+      stack[top++] = leftNearer ? right : left;
+      stack[top++] = leftNearer ? left : right;
       continue;
     }
     // Leaf straddling a threshold: each instance on its own, with hysteresis
