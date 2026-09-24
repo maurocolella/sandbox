@@ -1,19 +1,21 @@
 /*
  Title: instancedLod
- Description: Per-instance level of detail for instance sets (atoms, bonds), with hierarchical frustum culling.
+ Description: Level of detail for instance sets (atoms, bonds), per leaf of a hierarchy, with hierarchical
+ frustum culling.
+ - A bounding-sphere hierarchy (k-d split of the longest axis at a multiple of LEAF_SIZE near the median)
+   groups instances into leaves of exactly LEAF_SIZE (only the very last is shorter). Instance data is
+   stored in hierarchy order, so leaf j holds instances j * LEAF_SIZE onwards.
  - Each instance's transform (rows of its 3x4 matrix) and color live in GPU textures, uploaded once. There is
-   one mesh per level (at most one draw call per level); each draws a list of instance indices, and its
-   vertex shader fetches the instance's transform from the texture.
- - Each instance picks its level from its own on-screen size: its feature (atom or bond radius) projected at
+   one mesh per level (at most one draw call per level); each draws a list of leaf ids, LEAF_SIZE instances
+   per entry, and its vertex shader fetches each instance's transform from the texture.
+ - Each leaf picks its level from its on-screen size: its largest feature (atom or bond radius) projected at
    its nearest point, with hysteresis (refine above a threshold +15%, coarsen below it -15%) so sizes near a
-   threshold don't flicker. A null level hides the instance; an impostor level draws one camera-facing
+   threshold don't flicker. A null level hides the leaf; an impostor level draws one camera-facing
    triangle per instance, shaded as a sphere (for sub-pixel sizes).
- - A bounding-sphere hierarchy (k-d split, midpoint of the longest axis) over the instances skips nodes
-   outside the view, and gives a whole node one level when all of its instances would get it anyway, so
-   only leaves straddling a threshold are visited instance by instance. Nearer nodes are visited first, so
-   each level draws roughly front to back.
- - The index lists are rebuilt when the view changes, and only the part that differs from the last upload
-   is sent to the GPU.
+ - The hierarchy skips nodes outside the view, and gives a whole node one level when all of its leaves
+   would get it anyway. Nearer nodes are visited first, so each level draws roughly front to back.
+ - The lists are rebuilt when the view changes (a leaf id per LEAF_SIZE instances keeps this cheap), and
+   only the part that differs from the last upload is sent to the GPU.
 */
 import * as THREE from "three";
 
@@ -28,22 +30,16 @@ export interface LodInstances {
   /** One mesh per level (null where the level hides instances). */
   meshes: (THREE.Mesh | null)[];
   levelMinPx: number[];
-  /** Instance centers (xyz), bounding radii and feature sizes, by instance index. */
-  centers: Float32Array;
-  extents: Float32Array;
-  features: Float32Array;
-  /** Level of each instance (hysteresis state); UNSET before its first evaluation. */
+  /** Level of each leaf (hysteresis state); UNSET before its first evaluation. */
   state: Uint8Array;
-  /** Instance indices, grouped so each hierarchy node covers a contiguous range. */
-  order: Uint32Array;
-  /** Hierarchy nodes: instance range, children (-1 for leaves), bounding sphere, feature range. */
+  /** Hierarchy nodes: instance range (in hierarchy order), children (-1 for leaves), bounding sphere, feature range. */
   nodeStart: Uint32Array;
   nodeEnd: Uint32Array;
   nodeLeft: Int32Array;
   nodeRight: Int32Array;
   nodeSphere: Float32Array; // x, y, z, r
   nodeFeature: Float32Array; // min, max
-  /** Per-level index lists and how many entries are drawn. */
+  /** Per-level lists of leaf ids and how many entries are drawn. */
   lists: (Uint32Array | null)[];
   listCounts: Uint32Array;
   /** Camera state of the last evaluation, to skip unchanged frames. */
@@ -71,13 +67,9 @@ export interface LodBuildProgress {
 /** Everything an instance set needs apart from GPU objects: plain typed arrays, so it can be built in a worker. */
 export interface LodData {
   count: number;
-  /** Transform rows (3 RGBA texels per instance) and colors (1 RGBA8 texel per instance), TEX_WIDTH wide. */
+  /** Transform rows (3 RGBA texels per instance) and colors (1 RGBA8 texel per instance), TEX_WIDTH wide, in hierarchy order. */
   matData: Float32Array;
   colorData: Uint8Array;
-  centers: Float32Array;
-  extents: Float32Array;
-  features: Float32Array;
-  order: Uint32Array;
   nodeStart: Uint32Array;
   nodeEnd: Uint32Array;
   nodeLeft: Int32Array;
@@ -88,31 +80,36 @@ export interface LodData {
 
 /** The buffers behind a LodData (for zero-copy transfer from a worker). */
 export function lodDataTransferables(d: LodData): ArrayBuffer[] {
-  return [d.matData, d.colorData, d.centers, d.extents, d.features, d.order, d.nodeStart, d.nodeEnd, d.nodeLeft, d.nodeRight, d.nodeSphere, d.nodeFeature]
+  return [d.matData, d.colorData, d.nodeStart, d.nodeEnd, d.nodeLeft, d.nodeRight, d.nodeSphere, d.nodeFeature]
     .map((a) => a.buffer as ArrayBuffer);
 }
 
 /**
- * Makes `material` read each instance's transform and color from textures, indexed by the `aInst` attribute.
+ * Makes `material` read each instance's transform and color from textures. The `aInst` attribute is a leaf
+ * id (one per LEAF_SIZE instances); instance = leaf * LEAF_SIZE + slot, and slots past the end are dropped.
  * With `impostor`, the geometry is a camera-facing triangle in the xy plane over a unit circle, shaded as a
  * sphere of the instance's radius (the normal is the sphere's, clamped to its rim outside the circle, as a
  * sub-pixel mesh's interpolated normals are). For sub-pixel levels, where it looks the same as a mesh at a
  * fraction of the cost.
  */
-function readInstancesFromTextures(material: THREE.Material, matrices: THREE.DataTexture, colors: THREE.DataTexture, impostor = false) {
+function readInstancesFromTextures(material: THREE.Material, matrices: THREE.DataTexture, colors: THREE.DataTexture, count: number, impostor = false) {
   material.customProgramCacheKey = () => (impostor ? "lod-instances-impostor" : "lod-instances");
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uInstMatrix = { value: matrices };
     shader.uniforms.uInstColor = { value: colors };
+    shader.uniforms.uInstCount = { value: count };
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", `#include <common>
 uniform highp sampler2D uInstMatrix;
 uniform highp sampler2D uInstColor;
+uniform uint uInstCount;
 attribute uint aInst;
 varying vec3 vInstColor;
 ivec2 lodTexel(uint t) { return ivec2(int(t % ${TEX_WIDTH}u), int(t / ${TEX_WIDTH}u)); }`)
       .replace("#include <beginnormal_vertex>", `#include <beginnormal_vertex>
-uint lodT = aInst * 3u;
+uint lodI = aInst * ${LEAF_SIZE}u + uint(gl_InstanceID % ${LEAF_SIZE});
+bool lodDead = lodI >= uInstCount;
+uint lodT = lodI * 3u;
 mat4 lodM = transpose(mat4(
   texelFetch(uInstMatrix, lodTexel(lodT), 0),
   texelFetch(uInstMatrix, lodTexel(lodT + 1u), 0),
@@ -123,7 +120,10 @@ mat4 lodM = transpose(mat4(
   objectNormal /= vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
   objectNormal = im * objectNormal;
 }
-vInstColor = texelFetch(uInstColor, lodTexel(aInst), 0).rgb;`)
+vInstColor = texelFetch(uInstColor, lodTexel(lodI), 0).rgb;`)
+      // Slots past the last instance: outside the clip volume, so nothing is drawn
+      .replace("#include <clipping_planes_vertex>", `if (lodDead) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+#include <clipping_planes_vertex>`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
 transformed = (lodM * vec4(transformed, 1.0)).xyz;`);
     shader.fragmentShader = shader.fragmentShader
@@ -147,38 +147,48 @@ vec3 nonPerturbedNormal = normal;`);
   };
 }
 
+/**
+ * Rearranges order[lo..hi) so that order[k] holds the k-th smallest key, with smaller-or-equal keys before
+ * it and larger-or-equal after (Hoare quickselect).
+ */
+function selectKth(order: Uint32Array, key: (i: number) => number, lo: number, hi: number, k: number) {
+  let l = lo, r = hi - 1;
+  while (r > l) {
+    const a = key(order[l]!), b = key(order[(l + r) >> 1]!), c = key(order[r]!);
+    const v = a < b ? (b < c ? b : a < c ? c : a) : (a < c ? a : b < c ? c : b); // median of three
+    let i = l, j = r;
+    while (i <= j) {
+      while (key(order[i]!) < v) i++;
+      while (key(order[j]!) > v) j--;
+      if (i <= j) { const t = order[i]!; order[i] = order[j]!; order[j] = t; i++; j--; }
+    }
+    if (k <= j) r = j;
+    else if (k >= i) l = i;
+    else return;
+  }
+}
+
 /** Instance data and hierarchy for a set (no GPU objects). */
 export function computeLodData(input: LodDataInput, onProgress?: (p: LodBuildProgress) => void): LodData {
   const { count, writeMatrix, extentOf, writeColor } = input;
 
-  // Instance data: transform rows and colors for the GPU; centers, extents and features for level selection
-  const rows = Math.max(1, Math.ceil((count * 3) / TEX_WIDTH));
-  const matData = new Float32Array(TEX_WIDTH * rows * 4);
-  const colorRows = Math.max(1, Math.ceil(count / TEX_WIDTH));
-  const colorData = new Uint8Array(TEX_WIDTH * colorRows * 4).fill(255);
+  // Centers, bounding radii and feature sizes, for the hierarchy
   const centers = new Float32Array(count * 3), extents = new Float32Array(count), features = new Float32Array(count);
   const m = new Float32Array(16), c = new Float32Array(3);
   for (let i = 0; i < count; i++) {
     if (onProgress && (i & 0xffff) === 0) onProgress({ stage: "instances", done: i, total: count });
     features[i] = writeMatrix(i, m, 0);
-    for (let r = 0; r < 3; r++) {
-      const o = (i * 3 + r) * 4;
-      matData[o] = m[r]!; matData[o + 1] = m[4 + r]!; matData[o + 2] = m[8 + r]!; matData[o + 3] = m[12 + r]!;
-    }
     centers[i * 3] = m[12]!; centers[i * 3 + 1] = m[13]!; centers[i * 3 + 2] = m[14]!;
     extents[i] = extentOf(i);
-    if (writeColor) {
-      writeColor(i, c, 0);
-      colorData[i * 4] = Math.round(c[0]! * 255); colorData[i * 4 + 1] = Math.round(c[1]! * 255); colorData[i * 4 + 2] = Math.round(c[2]! * 255);
-    }
   }
-  // Bounding-sphere hierarchy
+
+  // Bounding-sphere hierarchy; splits at multiples of LEAF_SIZE keep every leaf full but the last
   const order = new Uint32Array(count);
   for (let i = 0; i < count; i++) order[i] = i;
   const nStart: number[] = [], nEnd: number[] = [], nLeft: number[] = [], nRight: number[] = [];
   const nSphere: number[] = [], nFeature: number[] = [];
   let placed = 0; // instances in finished leaves
-  const build = (start: number, end: number, depth: number): number => {
+  const build = (start: number, end: number): number => {
     const id = nStart.length;
     nStart.push(start); nEnd.push(end); nLeft.push(-1); nRight.push(-1);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -198,28 +208,43 @@ export function computeLodData(input: LodDataInput, onProgress?: (p: LodBuildPro
     }
     nSphere.push(cx, cy, cz, radius);
     nFeature.push(fMin, fMax);
-    const leaf = () => {
-      placed += end - start;
+    const n = end - start;
+    if (n <= LEAF_SIZE) {
+      placed += n;
       if (onProgress && (id & 0x3ff) === 0) onProgress({ stage: "tree", done: placed, total: count });
       return id;
-    };
-    if (end - start <= LEAF_SIZE || depth > 40) return leaf();
-    const axis = [0, 1, 2].reduce((best, a) => (max[a]! - min[a]! > max[best]! - min[best]! ? a : best), 0);
-    const mid = (min[axis]! + max[axis]!) / 2;
-    let lo = start, hi = end - 1;
-    while (lo <= hi) {
-      if (centers[order[lo]! * 3 + axis]! < mid) lo++;
-      else { const t = order[lo]!; order[lo] = order[hi]!; order[hi] = t; hi--; }
     }
-    if (lo === start || lo === end) return leaf(); // all coincident: keep as a leaf
-    nLeft[id] = build(start, lo, depth + 1);
-    nRight[id] = build(lo, end, depth + 1);
+    const axis = [0, 1, 2].reduce((best, a) => (max[a]! - min[a]! > max[best]! - min[best]! ? a : best), 0);
+    const leaves = Math.ceil(n / LEAF_SIZE);
+    const split = start + LEAF_SIZE * Math.max(1, Math.min(leaves - 1, Math.round(leaves / 2)));
+    selectKth(order, (i) => centers[i * 3 + axis]!, start, end, split);
+    nLeft[id] = build(start, split);
+    nRight[id] = build(split, end);
     return id;
   };
-  if (count > 0) build(0, count, 0);
+  if (count > 0) build(0, count);
+
+  // Transforms and colors in hierarchy order, padded to whole leaves
+  const padded = Math.ceil(count / LEAF_SIZE) * LEAF_SIZE;
+  const rows = Math.max(1, Math.ceil((padded * 3) / TEX_WIDTH));
+  const matData = new Float32Array(TEX_WIDTH * rows * 4);
+  const colorRows = Math.max(1, Math.ceil(padded / TEX_WIDTH));
+  const colorData = new Uint8Array(TEX_WIDTH * colorRows * 4).fill(255);
+  for (let k = 0; k < count; k++) {
+    const i = order[k]!;
+    writeMatrix(i, m, 0);
+    for (let r = 0; r < 3; r++) {
+      const o = (k * 3 + r) * 4;
+      matData[o] = m[r]!; matData[o + 1] = m[4 + r]!; matData[o + 2] = m[8 + r]!; matData[o + 3] = m[12 + r]!;
+    }
+    if (writeColor) {
+      writeColor(i, c, 0);
+      colorData[k * 4] = Math.round(c[0]! * 255); colorData[k * 4 + 1] = Math.round(c[1]! * 255); colorData[k * 4 + 2] = Math.round(c[2]! * 255);
+    }
+  }
 
   return {
-    count, matData, colorData, centers, extents, features, order,
+    count, matData, colorData,
     nodeStart: Uint32Array.from(nStart), nodeEnd: Uint32Array.from(nEnd),
     nodeLeft: Int32Array.from(nLeft), nodeRight: Int32Array.from(nRight),
     nodeSphere: Float32Array.from(nSphere), nodeFeature: Float32Array.from(nFeature),
@@ -231,21 +256,22 @@ export interface ImpostorLevel { impostor: THREE.BufferGeometry }
 
 /** GPU objects for a set: textures for its data, one mesh per drawable level. */
 export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry | ImpostorLevel | null)[], levelMinPx: number[], material: THREE.Material): LodInstances {
-  const { count, centers, extents, features, order } = data;
+  const { count } = data;
+  const leafCount = Math.ceil(count / LEAF_SIZE);
   const matrices = new THREE.DataTexture(data.matData, TEX_WIDTH, data.matData.length / 4 / TEX_WIDTH, THREE.RGBAFormat, THREE.FloatType);
   const colors = new THREE.DataTexture(data.colorData, TEX_WIDTH, data.colorData.length / 4 / TEX_WIDTH, THREE.RGBAFormat, THREE.UnsignedByteType);
   matrices.needsUpdate = true;
   colors.needsUpdate = true;
-  readInstancesFromTextures(material, matrices, colors);
+  readInstancesFromTextures(material, matrices, colors, count);
   // Impostor levels get a material of their own (another shader)
   let impostorMaterial: THREE.Material | null = null;
   const materialFor = (level: THREE.BufferGeometry | ImpostorLevel) => {
     if (!("impostor" in level)) return material;
-    if (!impostorMaterial) { impostorMaterial = material.clone(); readInstancesFromTextures(impostorMaterial, matrices, colors, true); }
+    if (!impostorMaterial) { impostorMaterial = material.clone(); readInstancesFromTextures(impostorMaterial, matrices, colors, count, true); }
     return impostorMaterial;
   };
 
-  // One mesh per drawable level, drawing the instances listed in its `aInst` attribute
+  // One mesh per drawable level, drawing the leaves listed in its `aInst` attribute (LEAF_SIZE instances each)
   const group = new THREE.Group();
   const lists: (Uint32Array | null)[] = [];
   const meshes = levels.map((level) => {
@@ -254,9 +280,9 @@ export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry 
     const g = new THREE.InstancedBufferGeometry();
     for (const [name, attr] of Object.entries(base.attributes)) g.setAttribute(name, attr);
     if (base.index) g.setIndex(base.index);
-    const list = new Uint32Array(Math.max(1, count));
+    const list = new Uint32Array(Math.max(1, leafCount));
     lists.push(list);
-    g.setAttribute("aInst", new THREE.InstancedBufferAttribute(list, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("aInst", new THREE.InstancedBufferAttribute(list, 1, false, LEAF_SIZE).setUsage(THREE.DynamicDrawUsage));
     g.instanceCount = 0;
     const mesh = new THREE.Mesh(g, materialFor(level));
     mesh.frustumCulled = false; // culled per node here
@@ -267,9 +293,8 @@ export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry 
   });
 
   return {
-    group, count, meshes, levelMinPx, centers, extents, features,
-    state: new Uint8Array(count).fill(UNSET),
-    order,
+    group, count, meshes, levelMinPx,
+    state: new Uint8Array(leafCount).fill(UNSET),
     nodeStart: data.nodeStart, nodeEnd: data.nodeEnd, nodeLeft: data.nodeLeft, nodeRight: data.nodeRight,
     nodeSphere: data.nodeSphere, nodeFeature: data.nodeFeature,
     lists, listCounts: new Uint32Array(levels.length),
@@ -304,11 +329,11 @@ function viewUnchanged(set: LodInstances, camera: THREE.Camera, viewportHeightPx
   return same;
 }
 
-/** Rebuild the per-level instance lists for the current camera; returns true if anything drawn changed. */
+/** Rebuild the per-level leaf lists for the current camera; returns true if anything drawn changed. */
 export function updateLod(set: LodInstances, camera: THREE.Camera, viewportHeightPx: number): boolean {
   if (viewUnchanged(set, camera, viewportHeightPx)) return false;
   const nLevels = set.meshes.length, last = nLevels - 1, minPx = set.levelMinPx;
-  const { centers, extents, features, state, order, lists, nodeStart, nodeEnd, nodeLeft, nodeRight, nodeSphere, nodeFeature } = set;
+  const { state, lists, nodeStart, nodeEnd, nodeLeft, nodeRight, nodeSphere, nodeFeature } = set;
   if (cursor.length < nLevels) { cursor = new Uint32Array(nLevels); firstDiff = new Uint32Array(nLevels); }
   for (let l = 0; l < nLevels; l++) { cursor[l] = 0; firstDiff[l] = 0xffffffff; }
 
@@ -345,11 +370,11 @@ export function updateLod(set: LodInstances, camera: THREE.Camera, viewportHeigh
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const pxHi = isPersp ? (nodeFeature[n * 2 + 1]! * focalPx) / Math.max(1e-3, d - sr) : nodeFeature[n * 2 + 1]! * focalPx;
     const pxLo = isPersp ? (nodeFeature[n * 2]! * focalPx) / (d + sr) : nodeFeature[n * 2]! * focalPx;
-    // If the whole range sits clear of the thresholds (hysteresis included), every instance gets the same level
+    // If the whole range sits clear of the thresholds (hysteresis included), every leaf gets the same level
     let level = 0;
     while (level < last && pxHi < minPx[level]! * (1 - HYSTERESIS)) level++;
     if (level === last || pxLo >= minPx[level]! * (1 + HYSTERESIS)) {
-      for (let k = start; k < end; k++) { const i = order[k]!; state[i] = level; push(level, i); }
+      for (let j = start / LEAF_SIZE, jEnd = Math.ceil(end / LEAF_SIZE); j < jEnd; j++) { state[j] = level; push(level, j); }
       continue;
     }
     const left = nodeLeft[n]!;
@@ -365,18 +390,13 @@ export function updateLod(set: LodInstances, camera: THREE.Camera, viewportHeigh
       stack[top++] = leftNearer ? left : right;
       continue;
     }
-    // Leaf straddling a threshold: each instance on its own, with hysteresis
-    for (let k = start; k < end; k++) {
-      const i = order[k]!;
-      const ex = centers[i * 3]! - cx, ey = centers[i * 3 + 1]! - cy, ez = centers[i * 3 + 2]! - cz;
-      const di = Math.max(1e-3, Math.sqrt(ex * ex + ey * ey + ez * ez) - extents[i]!);
-      const px = isPersp ? (features[i]! * focalPx) / di : features[i]! * focalPx;
-      let l = state[i] === UNSET ? last : state[i]!;
-      while (l > 0 && px >= minPx[l - 1]! * (1 + HYSTERESIS)) l--;
-      while (l < last && px < minPx[l]! * (1 - HYSTERESIS)) l++;
-      state[i] = l;
-      push(l, i);
-    }
+    // Leaf straddling a threshold: its largest feature at its nearest point, with hysteresis
+    const j = start / LEAF_SIZE;
+    let l = state[j] === UNSET ? last : state[j]!;
+    while (l > 0 && pxHi >= minPx[l - 1]! * (1 + HYSTERESIS)) l--;
+    while (l < last && pxHi < minPx[l]! * (1 - HYSTERESIS)) l++;
+    state[j] = l;
+    push(l, j);
   }
 
   let changed = false;
@@ -391,7 +411,7 @@ export function updateLod(set: LodInstances, camera: THREE.Camera, viewportHeigh
       changed = true;
     }
     if (set.listCounts[l] !== n) { set.listCounts[l] = n; changed = true; }
-    geom.instanceCount = n;
+    geom.instanceCount = n * LEAF_SIZE;
     mesh.visible = n > 0;
   }
   return changed;
