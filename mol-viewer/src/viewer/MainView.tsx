@@ -150,7 +150,7 @@ export function MainView() {
             surfaceOpacity={surface.opacity}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
-            stats={display.fps ? { className: "fixed bottom-3 left-44 z-20 opacity-70" } : false}
+            stats={display.fps ? { className: "fixed bottom-36 left-3 z-20 opacity-70" } : false}
             continuousRender={display.continuousRender}
           />
         </Suspense>
