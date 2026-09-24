@@ -148,7 +148,7 @@ export function MainView() {
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
             onRenderStats={setRenderStats}
-            stats={display.fps ? { className: "fixed bottom-3 left-1/2 -translate-x-1/2 z-20 flex gap-1 opacity-90" } : false}
+            stats={display.fps ? { className: "fixed bottom-3 left-44 z-20 opacity-70" } : false}
             continuousRender={display.continuousRender}
           />
         </Suspense>

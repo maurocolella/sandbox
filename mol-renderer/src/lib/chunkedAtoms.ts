@@ -7,7 +7,21 @@
  Level thresholds come from each level's geometric error, so switches happen where they are invisible.
 */
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { buildChunked, type ChunkedInstances } from "./chunked";
+
+/**
+ * Indexed icosphere. Three's IcosahedronGeometry is non-indexed (3 vertices per triangle, none shared);
+ * with instancing, vertex work dominates, so merging shared vertices cuts it ~6x (1280 triangles: 3840 -> 642
+ * vertices). UVs are dropped first: their seams would otherwise keep duplicates apart.
+ */
+function icosphere(detail: number): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  g.deleteAttribute("uv");
+  const indexed = mergeVertices(g);
+  g.dispose();
+  return indexed;
+}
 
 // Each level is used only while its largest deviation from the true shape stays under MAX_ERROR_PX on
 // screen, so a switch happens where the two levels look the same.
@@ -50,7 +64,7 @@ export function buildChunkedAtoms(input: ChunkedAtomsInput): ChunkedInstances {
       return r;
     },
     writeColor: colors ? (i, c, o) => { c[o] = colors[i * 3]! / 255; c[o + 1] = colors[i * 3 + 1]! / 255; c[o + 2] = colors[i * 3 + 2]! / 255; } : undefined,
-    levels: SPHERE_DETAIL.map((d) => new THREE.IcosahedronGeometry(1, d)),
+    levels: SPHERE_DETAIL.map(icosphere),
     levelMinPx: SPHERE_MIN_PX,
     material: input.material,
   });

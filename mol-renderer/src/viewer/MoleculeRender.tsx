@@ -122,7 +122,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     >
       <color attach="background" args={[props.background]} />
       <CameraLights />
-      {props.stats && <StatsGl className={props.stats.className} trackGPU />}
+      {props.stats && <StatsGl className={props.stats.className} trackGPU minimal />}
       {props.onRenderStats && <RenderStats onStats={props.onRenderStats} />}
       <OrbitControls
         ref={(ctrl) => {
