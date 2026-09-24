@@ -1,7 +1,9 @@
 /*
  Title: GridRaycast
  Description: Pointer raycasting component that builds a uniform grid over atom positions and performs
- 3D DDA traversal to find the nearest hit efficiently. Emits onHover/onOut with instanceId, and degrades
+ 3D DDA traversal to find the nearest hit efficiently. The grid is dense and compact (atom indices sorted by
+ cell, plus per-cell offsets), with at most ~2 cells per atom (cells grow for sparse structures), so it
+ stays small and fast to build for millions of atoms. Emits onHover/onOut with instanceId, and degrades
  work while the camera is moving.
 */
 import { useEffect, useRef } from "react";
@@ -31,7 +33,7 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
   const leftDown = useRef(false);
   const eps = 0.001;
   const lastInstanceId = useRef<number | null>(null);
-  const gridRef = useRef<{ cell: number; min: Vector3; buckets: Map<string, Uint32Array> } | null>(null);
+  const gridRef = useRef<{ cell: number; min: Vector3; nx: number; ny: number; nz: number; offsets: Uint32Array; items: Uint32Array } | null>(null);
 
   useEffect(() => {
     const P = positions;
@@ -41,21 +43,28 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
     let avg = 0;
     for (let i = 0; i < count; i++) avg += R[i]!;
     avg = avg / Math.max(1, count);
-    const cell = Math.max(0.0001, (avg * radiusScale) * 2.0);
-    const buckets = new Map<string, number[]>();
-    for (let i = 0; i < count; i++) {
-      const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
-      const ix = Math.floor((x - min.x) / cell);
-      const iy = Math.floor((y - min.y) / cell);
-      const iz = Math.floor((z - min.z) / cell);
-      const key = `${ix},${iy},${iz}`;
-      let arr = buckets.get(key);
-      if (!arr) { arr = []; buckets.set(key, arr); }
-      arr.push(i);
-    }
-    const packed = new Map<string, Uint32Array>();
-    for (const [k, arr] of buckets) packed.set(k, Uint32Array.from(arr));
-    gridRef.current = { cell, min, buckets: packed };
+    const ex = bbox.max[0] - bbox.min[0], ey = bbox.max[1] - bbox.min[1], ez = bbox.max[2] - bbox.min[2];
+    let cell = Math.max(0.0001, (avg * radiusScale) * 2.0);
+    const maxCells = Math.max(1 << 20, 2 * count);
+    const cellsFor = (c: number) => (Math.floor(ex / c) + 1) * (Math.floor(ey / c) + 1) * (Math.floor(ez / c) + 1);
+    if (cellsFor(cell) > maxCells) cell *= Math.cbrt(cellsFor(cell) / maxCells) * 1.01;
+    while (cellsFor(cell) > maxCells) cell *= 1.05;
+    const nx = Math.floor(ex / cell) + 1, ny = Math.floor(ey / cell) + 1, nz = Math.floor(ez / cell) + 1;
+    const cellOf = (i: number) => {
+      const ix = Math.min(nx - 1, Math.max(0, Math.floor((P[i * 3]! - min.x) / cell)));
+      const iy = Math.min(ny - 1, Math.max(0, Math.floor((P[i * 3 + 1]! - min.y) / cell)));
+      const iz = Math.min(nz - 1, Math.max(0, Math.floor((P[i * 3 + 2]! - min.z) / cell)));
+      return ix + nx * (iy + ny * iz);
+    };
+    // Counting sort of atoms by cell
+    const cells = nx * ny * nz;
+    const offsets = new Uint32Array(cells + 1);
+    for (let i = 0; i < count; i++) offsets[cellOf(i) + 1]!++;
+    for (let c = 0; c < cells; c++) offsets[c + 1]! += offsets[c]!;
+    const items = new Uint32Array(count);
+    const cursor = offsets.slice(0, cells);
+    for (let i = 0; i < count; i++) items[cursor[cellOf(i)]!++] = i;
+    gridRef.current = { cell, min, nx, ny, nz, offsets, items };
   }, [positions, radii, count, radiusScale, bbox]);
 
   // No worker: keep main-thread DDA only
@@ -160,12 +169,11 @@ export function GridRaycast({ positions, radii, count, radiusScale, bbox, isCame
       let tCursor = tRange.t0;
       while (tCursor <= tRange.t1 && cellsVisited < maxCells) {
         // Test current voxel bucket
-        const key = `${ix},${iy},${iz}`;
-        const bucket = grid.buckets.get(key);
-        if (bucket) {
-          for (let k = 0; k < bucket.length; k++) {
+        if (ix >= 0 && ix < grid.nx && iy >= 0 && iy < grid.ny && iz >= 0 && iz < grid.nz) {
+          const c = ix + grid.nx * (iy + grid.ny * iz);
+          for (let k = grid.offsets[c]!, end = grid.offsets[c + 1]!; k < end; k++) {
             if (tested >= maxCandidates) break;
-            const j = bucket[k]!;
+            const j = grid.items[k]!;
             const cx = P[j * 3], cy = P[j * 3 + 1], cz = P[j * 3 + 2];
             const r = R[j]! * radiusScale;
             const ocx = ro.x - cx, ocy = ro.y - cy, ocz = ro.z - cz;

@@ -119,10 +119,10 @@ export function useHoverOverlays(
       const scaleMul = opts.scale ?? 1.05;
       let w = 0;
 
-      let atomIdxs: number[] | undefined;
+      let atomIdxs: ArrayLike<number> | undefined;
       if (opts.mode === "atom" && opts.hoveredAtom >= 0) atomIdxs = [opts.hoveredAtom];
-      else if (opts.mode === "chain" && opts.hoveredChain >= 0) atomIdxs = lookups?.atomsByChain[opts.hoveredChain];
-      else if (opts.mode === "residue" && opts.hoveredResidue >= 0) atomIdxs = lookups?.atomsByResidue[opts.hoveredResidue];
+      else if (opts.mode === "chain" && opts.hoveredChain >= 0) atomIdxs = lookups?.atomsByChain.of(opts.hoveredChain);
+      else if (opts.mode === "residue" && opts.hoveredResidue >= 0) atomIdxs = lookups?.atomsByResidue.of(opts.hoveredResidue);
 
       if (atomIdxs && atomIdxs.length > 0) {
         for (let k = 0; k < atomIdxs.length; k++) {
@@ -167,10 +167,10 @@ export function useHoverOverlays(
       const indexB = scene.bonds.indexB;
       let w = 0;
 
-      let bondIdxs: number[] | undefined;
-      if (opts.mode === "atom" && opts.hoveredAtom >= 0) bondIdxs = lookups?.bondsByAtom[opts.hoveredAtom];
-      else if (opts.mode === "chain" && opts.hoveredChain >= 0) bondIdxs = lookups?.bondsByChain[opts.hoveredChain];
-      else if (opts.mode === "residue" && opts.hoveredResidue >= 0) bondIdxs = lookups?.bondsByResidue[opts.hoveredResidue];
+      let bondIdxs: ArrayLike<number> | undefined;
+      if (opts.mode === "atom" && opts.hoveredAtom >= 0) bondIdxs = lookups?.bondsByAtom.of(opts.hoveredAtom);
+      else if (opts.mode === "chain" && opts.hoveredChain >= 0) bondIdxs = lookups?.bondsByChain.of(opts.hoveredChain);
+      else if (opts.mode === "residue" && opts.hoveredResidue >= 0) bondIdxs = lookups?.bondsByResidue.of(opts.hoveredResidue);
 
       if (bondIdxs && bondIdxs.length > 0) {
         for (let k = 0; k < bondIdxs.length; k++) {

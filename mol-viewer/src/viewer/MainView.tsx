@@ -75,10 +75,11 @@ export function MainView() {
     return () => { client.dispose(); surfaceClient.current = null; };
   }, []);
 
+  // Only while surfaces are on: one object per atom is too much heap for millions of atoms
   const atomsInput = useMemo<Atom[]>(() => {
     const s = filteredScene;
     const n = s?.atoms?.count ?? 0;
-    if (!s || n === 0) return [];
+    if (!surface.enabled || !s || n === 0) return [];
     const out: Atom[] = [];
     const pos = s.atoms.positions as Float32Array;
     const rad = s.atoms.radii as Float32Array;
@@ -91,7 +92,7 @@ export function MainView() {
       out.push({ x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i] });
     }
     return out;
-  }, [filteredScene]);
+  }, [filteredScene, surface.enabled]);
 
   // The previous surface stays on screen until the new one arrives; only disabling clears it
   useEffect(() => {
