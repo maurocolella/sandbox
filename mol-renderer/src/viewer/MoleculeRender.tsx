@@ -4,7 +4,7 @@
  builds scene objects (atoms/bonds/backbone or ribbons), configures adaptive rendering, and wires a grid-
  accelerated raycaster to drive hover overlays without shader patching.
 */
-import { Suspense, useEffect, useRef, useCallback } from "react";
+import { Suspense, useEffect, useRef, useCallback, useMemo } from "react";
 import { Canvas, invalidate } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload, StatsGl } from "@react-three/drei";
 import type { MolScene } from "pdb-parser";
@@ -48,12 +48,18 @@ export function MoleculeRender(props: MoleculeRenderProps) {
   // Filtered scene derived internally from scene + visibleChains
   const { filtered: filteredScene, selectionKey } = useFilteredScene(props.scene as MolScene | null, props.visibleChains);
 
+  // Options are memoized: a new object on every render would rebuild all atoms and bonds each time
+  const showSphereAtoms = props.renderControls.showAtoms && props.renderControls.renderMode === "spheres";
+  const showSphereBackbone = props.renderControls.showBackbone && props.renderControls.renderMode === "spheres";
+  const atomOptions = useMemo(
+    () => (showSphereAtoms ? { materialKind, radiusScale: props.renderControls.radiusScale } : false as const),
+    [showSphereAtoms, props.renderControls.radiusScale],
+  );
+  const backboneOptions = useMemo(() => (showSphereBackbone ? {} : false as const), [showSphereBackbone]);
   const objects = useSceneObjects(filteredScene, {
-    atoms: props.renderControls.showAtoms && props.renderControls.renderMode === "spheres"
-      ? { materialKind, radiusScale: props.renderControls.radiusScale }
-      : false,
+    atoms: atomOptions,
     bonds: props.renderControls.showBonds,
-    backbone: props.renderControls.showBackbone && props.renderControls.renderMode === "spheres" ? {} : false,
+    backbone: backboneOptions,
   });
 
   const ribbonGroup = useRibbonGroup(
