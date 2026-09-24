@@ -2,6 +2,8 @@
  Title: useRibbonGroup
  Description: Builds either a tubular ribbon or a flat ribbon mesh group from a MolScene
  using pdb-parser helpers, enforces front-side materials, and disposes resources on change.
+ A ribbon is built only when its representation is shown (on the main thread, which takes seconds for
+ millions of atoms), then cached per scene for later switches.
 */
 import { useEffect, useMemo, useRef } from "react";
 import type { MolScene, AtomMeshOptions } from "pdb-parser";
@@ -58,31 +60,6 @@ export function useRibbonGroup(
     cache.set(key, grp);
     return grp;
   }, [scene, representation, materialKind, params.thickness]);
-
-  // Prewarm the other ribbon kind in the background to avoid first-switch lag
-  useEffect(() => {
-    if (!scene) return;
-    // Only prewarm when scene changes or material/thickness changes
-    let raf = 0;
-    const prewarm = () => {
-      let cache = ribbonCache.get(scene);
-      if (!cache) { cache = new Map<string, Group | null>(); ribbonCache.set(scene, cache); }
-      const otherKinds: ("ribbon-tube" | "ribbon-flat")[] = ["ribbon-tube", "ribbon-flat"];
-      for (const rep of otherKinds) {
-        const key = cacheKey(rep, materialKind, params.thickness);
-        if (!cache.has(key)) {
-          const grp = buildRibbon(scene, rep, materialKind);
-          cache.set(key, grp);
-        }
-      }
-    };
-    if (typeof (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback === "function") {
-      (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(prewarm);
-    } else {
-      raf = window.setTimeout(prewarm, 0);
-    }
-    return () => { if (raf) clearTimeout(raf); };
-  }, [scene, materialKind, params.thickness]);
 
   // Dispose cache for previous scene when scene identity changes
   const prevScene = useRef<MolScene | null>(null);
