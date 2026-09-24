@@ -112,9 +112,20 @@ const ATOM_SPEC = {
 } satisfies Record<string, ColumnSpec>;
 type AtomColumns = Partial<Record<keyof typeof ATOM_SPEC, DecodedColumn>>;
 
+/** Loading progress: bytes parsed, atom rows read, then residues bonded. */
+export interface MmcifProgress {
+  stage: "parse" | "atoms" | "bonds";
+  done: number;
+  total: number;
+}
+
 /** Parse bytes (already decompressed) and load the first block as a MolScene. */
-export function loadMmcif(bytes: Uint8Array, options: MmcifLoadOptions = {}): MolScene {
-  return mmcifToMolScene(parseCif(bytes, { decode: { atom_site: ATOM_SPEC } }), options);
+export function loadMmcif(bytes: Uint8Array, options: MmcifLoadOptions = {}, onProgress?: (p: MmcifProgress) => void): MolScene {
+  const doc = parseCif(bytes, {
+    decode: { atom_site: ATOM_SPEC },
+    ...(onProgress ? { onProgress: (done: number, total: number) => onProgress({ stage: "parse", done, total }) } : {}),
+  });
+  return mmcifToMolScene(doc, options, onProgress);
 }
 
 const present = (c: DecodedColumn | undefined, row: number) => !!c && (!c.mask || c.mask[row] === Presence.Present);
@@ -123,7 +134,7 @@ const strOf = (c: DecodedColumn | undefined, row: number) => (present(c, row) ? 
 /** Code of a string column (distinct per value, -1 when null or absent). */
 const codeOf = (c: DecodedColumn | undefined, row: number) => (present(c, row) ? c!.values[row]! : -1);
 
-export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}): MolScene {
+export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}, onProgress?: (p: MmcifProgress) => void): MolScene {
   const warnings: string[] = doc.warnings.map((w) => `line ${w.line}: ${w.code}${w.detail ? ` (${w.detail})` : ""}`);
   const block: CifBlock | undefined = doc.blocks[options.block ?? 0];
   const site = block?.category("atom_site");
@@ -239,6 +250,7 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
 
   let ai = 0;
   for (let r = 0; r < total; r++) {
+    if (onProgress && (r & 0xffff) === 0) onProgress({ stage: "atoms", done: r, total });
     if (!keep[r]) continue;
     const run = rowResidue[r]!;
     let ri = residueOfRes[run]!;
@@ -364,6 +376,7 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
       return m;
     };
     for (let ri = 0; ri < residues.length; ri++) {
+      if (onProgress && (ri & 0x1fff) === 0) onProgress({ stage: "bonds", done: ri, total: residues.length });
       const first = residueFirstAtom[ri]!, end = residueAtomEnd[ri]!;
       if (end - first < 2) continue;
       // Microheterogeneous residues have several comps: template each comp's atoms separately

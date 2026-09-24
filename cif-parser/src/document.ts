@@ -317,12 +317,15 @@ export interface CifDocument {
 }
 
 /** Split "_cat.item" into [lower-case category, item as written]; tags without '.' use category "". */
-function readLoopValues(tz: CifTokenizer, dec: ColumnDecoder | null): { count: number; end: number; next: TokKind } {
+function readLoopValues(tz: CifTokenizer, dec: ColumnDecoder | null, progress?: (byte: number) => void): { count: number; end: number; next: TokKind } {
   let count = 0, end = tz.rawEnd, k: TokKind = Tok.Value;
   if (dec) {
-    do { dec.store(tz.start, tz.end, tz.valueKind); count++; end = tz.rawEnd; k = tz.next(); } while (k === Tok.Value);
+    do {
+      dec.store(tz.start, tz.end, tz.valueKind); count++; end = tz.rawEnd; k = tz.next();
+      if (progress && (count & 0xffff) === 0) progress(end);
+    } while (k === Tok.Value);
   } else {
-    do { count++; end = tz.rawEnd; k = tz.next(); } while (k === Tok.Value);
+    do { count++; end = tz.rawEnd; k = tz.next(); if (progress && (count & 0xffff) === 0) progress(end); } while (k === Tok.Value);
   }
   return { count, end, next: k };
 }
@@ -340,6 +343,8 @@ export interface ParseCifOptions {
    * tokenized once instead of twice; results land in `category.decoded`.
    */
   decode?: Record<string, Record<string, ColumnSpec>>;
+  /** Called now and then with how many bytes have been read. */
+  onProgress?: (bytesRead: number, bytesTotal: number) => void;
 }
 
 /** Index a complete CIF file (already decompressed). */
@@ -429,6 +434,7 @@ export function parseCif(bytes: Uint8Array, options: ParseCifOptions = {}): CifD
   const closeScope = () => { finishPending(); finishLoop(); flushPairs(); };
 
   const tz = CifTokenizer.of(bytes);
+  const progress = options.onProgress ? (byte: number) => options.onProgress!(byte, bytes.length) : undefined;
   let carried: TokKind | null = null; // token that ended a loop's values, still to be handled
   for (let k = tz.next(); k !== Tok.Eof; k = carried ?? tz.next()) {
     carried = null;
@@ -446,7 +452,7 @@ export function parseCif(bytes: Uint8Array, options: ParseCifOptions = {}): CifD
             loopDecoder = new ColumnDecoder(bytes, fields, spec, Math.ceil((bytes.length - tz.rawStart) / (fields.length * 4)));
           }
           // Tight loop over the values (locals only), then hand the terminating token back
-          const r = readLoopValues(tz, loopDecoder);
+          const r = readLoopValues(tz, loopDecoder, progress);
           loopValues = r.count;
           loopEnd = r.end;
           carried = r.next;
@@ -464,6 +470,7 @@ export function parseCif(bytes: Uint8Array, options: ParseCifOptions = {}): CifD
         break;
       }
       case Tok.Loop:
+        progress?.(tz.rawEnd);
         finishPending(); finishLoop();
         loopTags = []; loopLine = tz.line; loopValues = 0;
         break;

@@ -50,7 +50,7 @@ export interface LodInstances {
   dispose(): void;
 }
 
-export interface LodBuildInput {
+export interface LodDataInput {
   count: number;
   /** Writes instance i's 4x4 matrix (column-major) at `out[o..o+15]`; returns its feature size. */
   writeMatrix: (i: number, out: Float32Array, o: number) => number;
@@ -58,9 +58,37 @@ export interface LodBuildInput {
   extentOf: (i: number) => number;
   /** Optional per-instance RGB 0..1 at `out[o..o+2]`. */
   writeColor?: (i: number, out: Float32Array, o: number) => void;
-  levels: (THREE.BufferGeometry | null)[];
-  levelMinPx: number[];
-  material: THREE.Material;
+}
+
+/** Build progress: instance data written, then instances placed in the hierarchy's leaves. */
+export interface LodBuildProgress {
+  stage: "instances" | "tree";
+  done: number;
+  total: number;
+}
+
+/** Everything an instance set needs apart from GPU objects: plain typed arrays, so it can be built in a worker. */
+export interface LodData {
+  count: number;
+  /** Transform rows (3 RGBA texels per instance) and colors (1 RGBA8 texel per instance), TEX_WIDTH wide. */
+  matData: Float32Array;
+  colorData: Uint8Array;
+  centers: Float32Array;
+  extents: Float32Array;
+  features: Float32Array;
+  order: Uint32Array;
+  nodeStart: Uint32Array;
+  nodeEnd: Uint32Array;
+  nodeLeft: Int32Array;
+  nodeRight: Int32Array;
+  nodeSphere: Float32Array;
+  nodeFeature: Float32Array;
+}
+
+/** The buffers behind a LodData (for zero-copy transfer from a worker). */
+export function lodDataTransferables(d: LodData): ArrayBuffer[] {
+  return [d.matData, d.colorData, d.centers, d.extents, d.features, d.order, d.nodeStart, d.nodeEnd, d.nodeLeft, d.nodeRight, d.nodeSphere, d.nodeFeature]
+    .map((a) => a.buffer as ArrayBuffer);
 }
 
 /** Makes `material` read each instance's transform and color from textures, indexed by the `aInst` attribute. */
@@ -96,8 +124,9 @@ transformed = (lodM * vec4(transformed, 1.0)).xyz;`);
   };
 }
 
-export function buildLodInstances(input: LodBuildInput): LodInstances {
-  const { count, writeMatrix, extentOf, writeColor, levels, levelMinPx, material } = input;
+/** Instance data and hierarchy for a set (no GPU objects). */
+export function computeLodData(input: LodDataInput, onProgress?: (p: LodBuildProgress) => void): LodData {
+  const { count, writeMatrix, extentOf, writeColor } = input;
 
   // Instance data: transform rows and colors for the GPU; centers, extents and features for level selection
   const rows = Math.max(1, Math.ceil((count * 3) / TEX_WIDTH));
@@ -107,6 +136,7 @@ export function buildLodInstances(input: LodBuildInput): LodInstances {
   const centers = new Float32Array(count * 3), extents = new Float32Array(count), features = new Float32Array(count);
   const m = new Float32Array(16), c = new Float32Array(3);
   for (let i = 0; i < count; i++) {
+    if (onProgress && (i & 0xffff) === 0) onProgress({ stage: "instances", done: i, total: count });
     features[i] = writeMatrix(i, m, 0);
     for (let r = 0; r < 3; r++) {
       const o = (i * 3 + r) * 4;
@@ -119,17 +149,12 @@ export function buildLodInstances(input: LodBuildInput): LodInstances {
       colorData[i * 4] = Math.round(c[0]! * 255); colorData[i * 4 + 1] = Math.round(c[1]! * 255); colorData[i * 4 + 2] = Math.round(c[2]! * 255);
     }
   }
-  const matrices = new THREE.DataTexture(matData, TEX_WIDTH, rows, THREE.RGBAFormat, THREE.FloatType);
-  const colors = new THREE.DataTexture(colorData, TEX_WIDTH, colorRows, THREE.RGBAFormat, THREE.UnsignedByteType);
-  matrices.needsUpdate = true;
-  colors.needsUpdate = true;
-  readInstancesFromTextures(material, matrices, colors);
-
   // Bounding-sphere hierarchy
   const order = new Uint32Array(count);
   for (let i = 0; i < count; i++) order[i] = i;
   const nStart: number[] = [], nEnd: number[] = [], nLeft: number[] = [], nRight: number[] = [];
   const nSphere: number[] = [], nFeature: number[] = [];
+  let placed = 0; // instances in finished leaves
   const build = (start: number, end: number, depth: number): number => {
     const id = nStart.length;
     nStart.push(start); nEnd.push(end); nLeft.push(-1); nRight.push(-1);
@@ -150,7 +175,12 @@ export function buildLodInstances(input: LodBuildInput): LodInstances {
     }
     nSphere.push(cx, cy, cz, radius);
     nFeature.push(fMin, fMax);
-    if (end - start <= LEAF_SIZE || depth > 40) return id;
+    const leaf = () => {
+      placed += end - start;
+      if (onProgress && (id & 0x3ff) === 0) onProgress({ stage: "tree", done: placed, total: count });
+      return id;
+    };
+    if (end - start <= LEAF_SIZE || depth > 40) return leaf();
     const axis = [0, 1, 2].reduce((best, a) => (max[a]! - min[a]! > max[best]! - min[best]! ? a : best), 0);
     const mid = (min[axis]! + max[axis]!) / 2;
     let lo = start, hi = end - 1;
@@ -158,12 +188,29 @@ export function buildLodInstances(input: LodBuildInput): LodInstances {
       if (centers[order[lo]! * 3 + axis]! < mid) lo++;
       else { const t = order[lo]!; order[lo] = order[hi]!; order[hi] = t; hi--; }
     }
-    if (lo === start || lo === end) return id; // all coincident: keep as a leaf
+    if (lo === start || lo === end) return leaf(); // all coincident: keep as a leaf
     nLeft[id] = build(start, lo, depth + 1);
     nRight[id] = build(lo, end, depth + 1);
     return id;
   };
   if (count > 0) build(0, count, 0);
+
+  return {
+    count, matData, colorData, centers, extents, features, order,
+    nodeStart: Uint32Array.from(nStart), nodeEnd: Uint32Array.from(nEnd),
+    nodeLeft: Int32Array.from(nLeft), nodeRight: Int32Array.from(nRight),
+    nodeSphere: Float32Array.from(nSphere), nodeFeature: Float32Array.from(nFeature),
+  };
+}
+
+/** GPU objects for a set: textures for its data, one mesh per drawable level. */
+export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry | null)[], levelMinPx: number[], material: THREE.Material): LodInstances {
+  const { count, centers, extents, features, order } = data;
+  const matrices = new THREE.DataTexture(data.matData, TEX_WIDTH, data.matData.length / 4 / TEX_WIDTH, THREE.RGBAFormat, THREE.FloatType);
+  const colors = new THREE.DataTexture(data.colorData, TEX_WIDTH, data.colorData.length / 4 / TEX_WIDTH, THREE.RGBAFormat, THREE.UnsignedByteType);
+  matrices.needsUpdate = true;
+  colors.needsUpdate = true;
+  readInstancesFromTextures(material, matrices, colors);
 
   // One mesh per drawable level, drawing the instances listed in its `aInst` attribute
   const group = new THREE.Group();
@@ -189,9 +236,8 @@ export function buildLodInstances(input: LodBuildInput): LodInstances {
     group, count, meshes, levelMinPx, centers, extents, features,
     state: new Uint8Array(count).fill(UNSET),
     order,
-    nodeStart: Uint32Array.from(nStart), nodeEnd: Uint32Array.from(nEnd),
-    nodeLeft: Int32Array.from(nLeft), nodeRight: Int32Array.from(nRight),
-    nodeSphere: Float32Array.from(nSphere), nodeFeature: Float32Array.from(nFeature),
+    nodeStart: data.nodeStart, nodeEnd: data.nodeEnd, nodeLeft: data.nodeLeft, nodeRight: data.nodeRight,
+    nodeSphere: data.nodeSphere, nodeFeature: data.nodeFeature,
     lists, listCounts: new Uint32Array(levels.length),
     lastView: new Float64Array(33).fill(NaN),
     dispose() {

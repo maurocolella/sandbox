@@ -1,11 +1,12 @@
 import { Suspense, useCallback, useMemo, useState, useEffect, useRef } from "react";
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
+import { loadStatusText } from "../lib/loadStatusText";
 import { useRendererControls } from "../lib/hooks/useRendererControls";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { useFilteredScene } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo } from "mol-renderer";
+import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
 import SurfaceWorker from "chem-surface/worker?worker";
 
@@ -35,7 +36,8 @@ export function MainView() {
     ...(parseOpts.useModelSelection ? { modelSelection: parseOpts.modelSelection as number } : {}),
   }), [parseOpts]);
 
-  const { scene, error, loading } = useMolScene(source.url, parseOptions, source.fallbackUrl);
+  const { scene, error, loading, status: loadStatus } = useMolScene(source.url, parseOptions, source.fallbackUrl);
+  const [buildStatus, setBuildStatus] = useState<SceneBuildStatus | null>(null);
   const sourceError = error && source.pdbId && /\b404\b/.test(error)
     ? `No entry ${source.pdbId} on RCSB.`
     : error;
@@ -147,12 +149,13 @@ export function MainView() {
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
             onRenderStats={setRenderStats}
+            onBuildStatus={setBuildStatus}
             stats={display.fps ? { className: "fixed bottom-3 left-44 z-20 opacity-70" } : false}
             continuousRender={display.continuousRender}
           />
         </Suspense>
       </div>
-      {!loading && filteredScene && (
+      {!loading && !buildStatus && filteredScene && (
         <div className="absolute bottom-3 left-3 z-10">
           <div className="rounded-lg bg-zinc-900/80 p-3 text-zinc-200 backdrop-blur">
             <div className="mb-1 text-sm font-semibold">Model</div>
@@ -163,9 +166,9 @@ export function MainView() {
           </div>
         </div>
       )}
-      {loading && (
+      {(loading || buildStatus) && (
         <div style={{ position: "absolute", left: 12, bottom: 12, color: "#ccc", fontFamily: "monospace", fontSize: 12 }}>
-          Loading…
+          {loadStatusText(loading ? loadStatus : null, buildStatus) ?? "Loading…"}
         </div>
       )}
     </div>

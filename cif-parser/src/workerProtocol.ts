@@ -1,8 +1,11 @@
 import type { MolScene } from "pdb-parser";
-import type { MmcifLoadOptions } from "./mmcif.js";
+import type { MmcifLoadOptions, MmcifProgress } from "./mmcif.js";
 
 export interface MmcifWorkerRequest { id: number; bytes: ArrayBuffer; options: MmcifLoadOptions }
-export type MmcifWorkerResponse = { id: number; ok: true; scene: MolScene } | { id: number; ok: false; error: string };
+export type MmcifWorkerResponse =
+  | { id: number; ok: true; scene: MolScene }
+  | { id: number; ok: false; error: string }
+  | { id: number; progress: MmcifProgress };
 
 /** Every distinct ArrayBuffer behind the scene's typed arrays (zero-copy transfer). */
 export function transferablesOf(scene: MolScene): ArrayBuffer[] {
@@ -24,12 +27,12 @@ export function transferablesOf(scene: MolScene): ArrayBuffer[] {
 export class MmcifWorkerClient {
   private worker: Worker | null = null;
   private nextId = 1;
-  private pending: { id: number; resolve: (s: MolScene) => void; reject: (e: unknown) => void } | null = null;
+  private pending: { id: number; resolve: (s: MolScene) => void; reject: (e: unknown) => void; onProgress?: (p: MmcifProgress) => void } | null = null;
 
   constructor(private readonly createWorker: () => Worker) {}
 
   /** Parse `bytes` (decompressed mmCIF). The buffer is transferred, so the caller must not reuse it. */
-  load(bytes: Uint8Array, options: MmcifLoadOptions = {}): Promise<MolScene> {
+  load(bytes: Uint8Array, options: MmcifLoadOptions = {}, onProgress?: (p: MmcifProgress) => void): Promise<MolScene> {
     this.cancel();
     const worker = this.ensureWorker();
     const id = this.nextId++;
@@ -37,7 +40,7 @@ export class MmcifWorkerClient {
       ? bytes.buffer
       : bytes.slice().buffer;
     return new Promise<MolScene>((resolve, reject) => {
-      this.pending = { id, resolve, reject };
+      this.pending = { id, resolve, reject, ...(onProgress ? { onProgress } : {}) };
       worker.postMessage({ id, bytes: buffer, options } satisfies MmcifWorkerRequest, [buffer]);
     });
   }
@@ -63,6 +66,7 @@ export class MmcifWorkerClient {
     worker.onmessage = (ev: MessageEvent<MmcifWorkerResponse>) => {
       const res = ev.data;
       if (!this.pending || this.pending.id !== res.id) return;
+      if ("progress" in res) { this.pending.onProgress?.(res.progress); return; }
       const { resolve, reject } = this.pending;
       this.pending = null;
       if (res.ok) resolve(res.scene); else reject(new Error(res.error));

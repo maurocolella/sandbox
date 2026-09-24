@@ -3,14 +3,18 @@
  Description: Fetches a structure (PDB or mmCIF, optionally gzipped) and parses it into a MolScene.
  mmCIF is parsed in a worker via cif-parser; PDB text uses pdb-parser. If the URL can't be fetched or
  parsed, an optional fallback URL is tried (PDB IDs: mmCIF first, legacy PDB second). Exposes
- { scene, error, loading } and re-runs when the URLs or key parse options change; the previous scene
- stays until the next is ready.
+ { scene, error, loading, status } and re-runs when the URLs or key parse options change; the previous
+ scene stays until the next is ready. `status` tracks the current stage (download, decompress, parse,
+ atoms, bonds) with counts where known.
 */
 import { useEffect, useRef, useState } from "react";
 import type { MolScene, ParseOptions } from "pdb-parser";
 import * as PDB from "pdb-parser";
-import { MmcifWorkerClient } from "cif-parser";
+import { MmcifWorkerClient, type MmcifProgress } from "cif-parser";
 import MmcifWorker from "cif-parser/worker?worker";
+
+/** A loading stage, with counts where known (download total only when the server reports it). */
+export type LoadStatus = { stage: "download" | "decompress" | MmcifProgress["stage"]; done?: number; total?: number };
 
 const isGzip = (b: Uint8Array) => b.length > 2 && b[0] === 0x1f && b[1] === 0x8b;
 
@@ -41,8 +45,31 @@ function isCif(url: string, bytes: Uint8Array): boolean {
   return false;
 }
 
-export function useMolScene(url: string, options: ParseOptions, fallbackUrl?: string): { scene: MolScene | null, error?: string, loading: boolean } {
+/** Reads a response body, reporting bytes received (and the total, when the server states it). */
+async function readBody(res: Response, onProgress: (done: number, total?: number) => void): Promise<Uint8Array> {
+  const header = Number(res.headers.get("content-length"));
+  const total = Number.isFinite(header) && header > 0 ? header : undefined;
+  if (!res.body) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let done = 0;
+  for (;;) {
+    const r = await reader.read();
+    if (r.done) break;
+    chunks.push(r.value);
+    done += r.value.length;
+    // A transfer-encoded body can exceed the stated length; the total is then unknown
+    onProgress(done, total !== undefined && done <= total ? total : undefined);
+  }
+  const out = new Uint8Array(done);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+
+export function useMolScene(url: string, options: ParseOptions, fallbackUrl?: string): { scene: MolScene | null, error?: string, loading: boolean, status: LoadStatus | null } {
   const [scene, setScene] = useState<MolScene | null>(null);
+  const [status, setStatus] = useState<LoadStatus | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState<boolean>(true);
   const cifClient = useRef<MmcifWorkerClient | null>(null);
@@ -58,19 +85,23 @@ export function useMolScene(url: string, options: ParseOptions, fallbackUrl?: st
     setLoading(true);
     setError(undefined);
     // Keep the current scene on screen until the new one has parsed
+    const report = (s: LoadStatus) => { if (mounted) setStatus(s); };
     const load = async (from: string): Promise<MolScene> => {
+      report({ stage: "download" });
       const res = await fetch(from);
       if (!res.ok) throw new FetchError(res.status, res.statusText);
-      let bytes = new Uint8Array(await res.arrayBuffer());
-      if (isGzip(bytes)) bytes = await gunzip(bytes);
+      let bytes = await readBody(res, (done, total) => report(total !== undefined ? { stage: "download", done, total } : { stage: "download", done }));
+      if (isGzip(bytes)) { report({ stage: "decompress" }); bytes = await gunzip(bytes); }
       if (isCif(from, bytes)) {
         const client = cifClient.current;
         if (!client) throw new DOMException("unmounted", "AbortError");
+        report({ stage: "parse", done: 0, total: bytes.length });
         return client.load(bytes, {
           altLocPolicy: options.altLocPolicy,
           ...(options.modelSelection != null ? { modelSelection: options.modelSelection } : {}),
-        });
+        }, (p) => report(p));
       }
+      report({ stage: "parse" });
       const text = new TextDecoder().decode(bytes);
       try {
         return await PDB.parsePdbToMolSceneAsync(text, options);
@@ -99,7 +130,7 @@ export function useMolScene(url: string, options: ParseOptions, fallbackUrl?: st
         const msg = e instanceof Error ? e.message : String(e);
         if (mounted) setError(msg);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) { setLoading(false); setStatus(null); }
       }
     })();
     return () => { mounted = false; };
@@ -107,5 +138,5 @@ export function useMolScene(url: string, options: ParseOptions, fallbackUrl?: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, fallbackUrl, options.altLocPolicy, options.modelSelection, options.bondPolicy]);
 
-  return { scene, error, loading };
+  return { scene, error, loading, status };
 }

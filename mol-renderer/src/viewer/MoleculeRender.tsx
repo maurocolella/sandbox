@@ -12,7 +12,7 @@ import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
 import { useRenderKeys, type Representation } from "../lib/hooks/useRenderKeys";
-import { useSceneObjects } from "../lib/hooks/useSceneObjects";
+import { useSceneObjects, type SceneBuildStatus } from "../lib/hooks/useSceneObjects";
 import { useRibbonGroup } from "../lib/hooks/useRibbonGroup";
 import type { RenderControls, OverlayControls } from "./types";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
@@ -39,6 +39,8 @@ interface MoleculeRenderProps {
   stats?: { className?: string } | false;
   /** Render every frame instead of on demand (for measuring sustained FPS). */
   continuousRender?: boolean;
+  /** Called as atoms and bonds are built (in workers) and uploaded; null once everything is drawn. */
+  onBuildStatus?: (status: SceneBuildStatus | null) => void;
 }
 
 export function MoleculeRender(props: MoleculeRenderProps) {
@@ -61,6 +63,8 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     bonds: props.renderControls.showBonds,
     backbone: backboneOptions,
   });
+  const onBuildStatus = props.onBuildStatus;
+  useEffect(() => { onBuildStatus?.(objects.status); }, [objects.status, onBuildStatus]);
 
   const ribbonGroup = useRibbonGroup(
     filteredScene,
@@ -155,7 +159,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
               {props.renderControls.showBonds && objects.bonds && (
-                <InstancesLod key={keys.bonds} set={objects.bonds} />
+                <InstancesLod key={keys.bonds} set={objects.bonds} onDrawn={objects.bondsDrawn} />
               )}
               {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
@@ -163,13 +167,9 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           {props.renderControls.renderMode === "spheres" && (
             <>
               {props.renderControls.showAtoms && objects.atoms && (
-                <InstancesLod
-                  key={keys.atoms}
-                  set={objects.atoms}
-                 
-                />
+                <InstancesLod key={keys.atoms} set={objects.atoms} onDrawn={objects.atomsDrawn} />
               )}
-              {props.renderControls.showBonds && objects.bonds && <InstancesLod key={keys.bonds} set={objects.bonds} />}
+              {props.renderControls.showBonds && objects.bonds && <InstancesLod key={keys.bonds} set={objects.bonds} onDrawn={objects.bondsDrawn} />}
               {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
               {isSpheres && hoverAtomOverlay && (
                 <primitive key="hover-atom-overlay" object={hoverAtomOverlay} />

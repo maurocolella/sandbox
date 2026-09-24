@@ -1,6 +1,7 @@
 /*
  Title: lodAtoms
- Description: Level-of-detail atom spheres and bond cylinders built on `instancedLod`.
+ Description: Level-of-detail atom spheres and bond cylinders built on `instancedLod`. The instance data is computed
+ from plain arrays (so it can run in a worker); the GPU objects are created from it on the main thread.
  - Atoms: icosphere levels of 1280 / 720 / 320 / 80 / 20 triangles.
  - Bonds: open-ended cylinders (the atom spheres cover the ends) with 12 / 8 / 5 / 3 sides, hidden once
    thinner than a quarter pixel.
@@ -8,7 +9,7 @@
 */
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { buildLodInstances, type LodInstances } from "./instancedLod";
+import { computeLodData, createLodInstances, type LodBuildProgress, type LodData, type LodInstances } from "./instancedLod";
 
 /**
  * Indexed icosphere with exact sphere normals. Three's IcosahedronGeometry is non-indexed (3 vertices per
@@ -51,12 +52,12 @@ export interface LodAtomsInput {
   radii: Float32Array;
   colors?: Uint8Array; // RGB 0-255 per atom
   radiusScale: number;
-  material: THREE.Material;
 }
 
-export function buildLodAtoms(input: LodAtomsInput): LodInstances {
+/** Atom instance data (plain arrays; runs in a worker). */
+export function atomLodData(input: LodAtomsInput, onProgress?: (p: LodBuildProgress) => void): LodData {
   const { positions, radii, colors, radiusScale } = input;
-  return buildLodInstances({
+  return computeLodData({
     count: input.count,
     writeMatrix: (i, m, o) => {
       const r = radii[i]! * radiusScale;
@@ -68,10 +69,11 @@ export function buildLodAtoms(input: LodAtomsInput): LodInstances {
     },
     extentOf: (i) => radii[i]! * radiusScale,
     writeColor: colors ? (i, c, o) => { c[o] = colors[i * 3]! / 255; c[o + 1] = colors[i * 3 + 1]! / 255; c[o + 2] = colors[i * 3 + 2]! / 255; } : undefined,
-    levels: SPHERE_DETAIL.map(icosphere),
-    levelMinPx: SPHERE_MIN_PX,
-    material: input.material,
-  });
+  }, onProgress);
+}
+
+export function createLodAtoms(data: LodData, material: THREE.Material): LodInstances {
+  return createLodInstances(data, SPHERE_DETAIL.map(icosphere), SPHERE_MIN_PX, material);
 }
 
 export interface LodBondsInput {
@@ -80,14 +82,14 @@ export interface LodBondsInput {
   indexB: ArrayLike<number>;
   positions: Float32Array;
   radius: number;
-  material: THREE.Material;
 }
 
-export function buildLodBonds(input: LodBondsInput): LodInstances {
+/** Bond instance data (plain arrays; runs in a worker). */
+export function bondLodData(input: LodBondsInput, onProgress?: (p: LodBuildProgress) => void): LodData {
   const { indexA, indexB, positions, radius } = input;
   const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), q = new THREE.Quaternion();
   const pos = new THREE.Vector3(), scale = new THREE.Vector3(), mat = new THREE.Matrix4();
-  return buildLodInstances({
+  return computeLodData({
     count: input.count,
     writeMatrix: (i, m, o) => {
       const a = indexA[i]! * 3, b = indexB[i]! * 3;
@@ -105,8 +107,9 @@ export function buildLodBonds(input: LodBondsInput): LodInstances {
       const dx = positions[b]! - positions[a]!, dy = positions[b + 1]! - positions[a + 1]!, dz = positions[b + 2]! - positions[a + 2]!;
       return Math.sqrt(radius * radius + (dx * dx + dy * dy + dz * dz) / 4);
     },
-    levels: [...BOND_SIDES.map((s) => new THREE.CylinderGeometry(1, 1, 1, s, 1, true)), null],
-    levelMinPx: BOND_MIN_PX,
-    material: input.material,
-  });
+  }, onProgress);
+}
+
+export function createLodBonds(data: LodData, material: THREE.Material): LodInstances {
+  return createLodInstances(data, [...BOND_SIDES.map((s) => new THREE.CylinderGeometry(1, 1, 1, s, 1, true)), null], BOND_MIN_PX, material);
 }
