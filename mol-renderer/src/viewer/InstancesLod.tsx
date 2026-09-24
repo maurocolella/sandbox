@@ -1,6 +1,6 @@
 /*
  Title: InstancesLod
- Description: Renders an instance set (atoms, bonds) and picks its level of detail before every frame,
+ Description: Renders an instance set (atoms, bonds) and picks each instance's level of detail before every frame,
  from what the current view needs (never from camera motion, so drags don't pop).
 */
 import { useFrame, useThree } from "@react-three/fiber";
@@ -19,5 +19,5 @@ export function InstancesLod({ set }: InstancesLodProps) {
     if (updateLod(set, camera, height)) invalidate();
   });
 
-  return <primitive object={set.mesh} />;
+  return <primitive object={set.group} />;
 }

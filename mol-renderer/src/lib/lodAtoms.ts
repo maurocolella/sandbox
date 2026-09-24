@@ -66,6 +66,7 @@ export function buildLodAtoms(input: LodAtomsInput): LodInstances {
       m[o + 12] = positions[i * 3]!; m[o + 13] = positions[i * 3 + 1]!; m[o + 14] = positions[i * 3 + 2]!; m[o + 15] = 1;
       return r;
     },
+    extentOf: (i) => radii[i]! * radiusScale,
     writeColor: colors ? (i, c, o) => { c[o] = colors[i * 3]! / 255; c[o + 1] = colors[i * 3 + 1]! / 255; c[o + 2] = colors[i * 3 + 2]! / 255; } : undefined,
     levels: SPHERE_DETAIL.map(icosphere),
     levelMinPx: SPHERE_MIN_PX,
@@ -98,6 +99,11 @@ export function buildLodBonds(input: LodBondsInput): LodInstances {
       mat.compose(pos, q, scale.set(radius, len, radius));
       m.set(mat.elements, o);
       return radius;
+    },
+    extentOf: (i) => {
+      const a = indexA[i]! * 3, b = indexB[i]! * 3;
+      const dx = positions[b]! - positions[a]!, dy = positions[b + 1]! - positions[a + 1]!, dz = positions[b + 2]! - positions[a + 2]!;
+      return Math.sqrt(radius * radius + (dx * dx + dy * dy + dz * dz) / 4);
     },
     levels: [...BOND_SIDES.map((s) => new THREE.CylinderGeometry(1, 1, 1, s, 1, true)), null],
     levelMinPx: BOND_MIN_PX,
