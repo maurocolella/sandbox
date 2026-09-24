@@ -11,15 +11,19 @@ import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { buildChunked, type ChunkedInstances } from "./chunked";
 
 /**
- * Indexed icosphere. Three's IcosahedronGeometry is non-indexed (3 vertices per triangle, none shared);
- * with instancing, vertex work dominates, so merging shared vertices cuts it ~6x (1280 triangles: 3840 -> 642
- * vertices). UVs are dropped first: their seams would otherwise keep duplicates apart.
+ * Indexed icosphere with exact sphere normals. Three's IcosahedronGeometry is non-indexed (3 vertices per
+ * triangle, none shared); with instancing, vertex work dominates, so merging shared vertices cuts it ~6x
+ * (1280 triangles: 3840 -> 642 vertices; 20 triangles: 60 -> 12). UVs and normals are dropped before
+ * merging (seams and the flat-shaded coarsest level would keep duplicates apart), then normals are set to
+ * the unit positions, which is exact for a sphere.
  */
 function icosphere(detail: number): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(1, detail);
   g.deleteAttribute("uv");
+  g.deleteAttribute("normal");
   const indexed = mergeVertices(g);
   g.dispose();
+  indexed.setAttribute("normal", new THREE.BufferAttribute(Float32Array.from(indexed.attributes.position!.array), 3));
   return indexed;
 }
 

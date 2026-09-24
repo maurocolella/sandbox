@@ -4,7 +4,10 @@
  - Instances are split by a k-d split (longest axis, midpoint) down to ~CHUNK_SIZE per chunk. Each chunk is
    an InstancedMesh whose bounding sphere comes from its actual instances, so frustum culling is
    conservative: a chunk is skipped only when all of its instances are outside the view.
- - Levels are shared geometries from finest to coarsest; a null level hides the chunk (0 triangles).
+ - Levels are geometries from finest to coarsest; a null level hides the chunk (0 triangles). Each chunk
+   gets its own geometry object per level, all sharing the same vertex buffers: Three.js caches vertex
+   array bindings per geometry, so sharing one geometry across chunks (each with its own instance buffer)
+   would force a full attribute re-setup on every draw, every frame.
    A chunk's level comes from the on-screen size of its largest feature at the chunk's nearest point, with
    hysteresis (refine above a threshold +15%, coarsen below it -15%) so sizes near a threshold don't
    flicker. Levels switch purely on what the view needs, never on camera motion. A triangle budget then
@@ -18,6 +21,8 @@ export const CHUNK_SIZE = 16384;
 
 export interface Chunk {
   mesh: THREE.InstancedMesh;
+  /** This chunk's geometry per level (sharing the set's vertex buffers); null = hidden. */
+  geoms: (THREE.BufferGeometry | null)[];
   center: THREE.Vector3;
   radius: number;
   /** World-space size (e.g. atom or bond radius) whose projection selects the level. */
@@ -37,7 +42,19 @@ export interface ChunkedInstances {
   /** Minimum projected feature size (px) for each level but the last. */
   levelMinPx: number[];
   material: THREE.Material;
+  /** Camera and budget state of the last evaluation, to skip unchanged frames. */
+  lastView: Float64Array;
   dispose(): void;
+}
+
+/** A geometry object of its own that shares `base`'s buffers (no data copied). */
+function shareGeometry(base: THREE.BufferGeometry): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(base.attributes)) g.setAttribute(name, attr);
+  if (base.index) g.setIndex(base.index);
+  if (!base.boundingSphere) base.computeBoundingSphere();
+  g.boundingSphere = base.boundingSphere;
+  return g;
 }
 
 export interface ChunkBuildInput {
@@ -87,7 +104,8 @@ export function buildChunked(input: ChunkBuildInput): ChunkedInstances {
   const coarsestDrawable = levels.reduce((last, g, i) => (g ? i : last), 0);
   for (const [start, end] of leaves) {
     const n = end - start;
-    const mesh = new THREE.InstancedMesh(levels[coarsestDrawable]!, material, n);
+    const geoms = levels.map((g) => (g ? shareGeometry(g) : null));
+    const mesh = new THREE.InstancedMesh(geoms[coarsestDrawable]!, material, n);
     const m = mesh.instanceMatrix.array as Float32Array;
     const col = writeColor ? new Float32Array(n * 3) : null;
     let feature = 0;
@@ -103,13 +121,14 @@ export function buildChunked(input: ChunkBuildInput): ChunkedInstances {
     mesh.computeBoundingSphere();
     mesh.raycast = () => {}; // hover picking uses its own grid
     group.add(mesh);
-    chunks.push({ mesh, center: mesh.boundingSphere!.center.clone(), radius: mesh.boundingSphere!.radius, featureSize: feature, ideal: coarsestDrawable, level: coarsestDrawable });
+    chunks.push({ mesh, geoms, center: mesh.boundingSphere!.center.clone(), radius: mesh.boundingSphere!.radius, featureSize: feature, ideal: coarsestDrawable, level: coarsestDrawable });
   }
 
   return {
     group, chunks, levels, levelTriangles, levelMinPx, material,
+    lastView: new Float64Array(34).fill(NaN),
     dispose() {
-      for (const c of chunks) c.mesh.dispose();
+      for (const c of chunks) { c.mesh.dispose(); for (const g of c.geoms) g?.dispose(); }
       for (const g of levels) g?.dispose();
       material.dispose();
     },
@@ -122,9 +141,22 @@ const sphere = new THREE.Sphere();
 const camPos = new THREE.Vector3();
 
 const HYSTERESIS = 0.15;
+// Reused per call (no per-frame allocation, so no garbage-collection spikes)
+const visible: { chunk: Chunk; dist: number; level: number; maxLevel: number }[] = [];
+const pool: { chunk: Chunk; dist: number; level: number; maxLevel: number }[] = [];
+
+/** True if camera, viewport and budget are exactly as at the last evaluation (records the new state otherwise). */
+function viewUnchanged(set: ChunkedInstances, camera: THREE.Camera, viewportHeightPx: number, triangleBudget: number): boolean {
+  const v = set.lastView, w = camera.matrixWorld.elements, p = camera.projectionMatrix.elements;
+  let same = v[32] === viewportHeightPx && v[33] === triangleBudget;
+  for (let i = 0; i < 16; i++) { if (v[i] !== w[i] || v[16 + i] !== p[i]) same = false; v[i] = w[i]!; v[16 + i] = p[i]!; }
+  v[32] = viewportHeightPx; v[33] = triangleBudget;
+  return same;
+}
 
 /** Pick each chunk's level for the current camera; returns true if any level changed. */
 export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewportHeightPx: number, triangleBudget: number): boolean {
+  if (viewUnchanged(set, camera, viewportHeightPx, triangleBudget)) return false;
   const last = set.levels.length - 1;
   camPos.setFromMatrixPosition(camera.matrixWorld);
   projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -134,7 +166,7 @@ export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewpo
     ? viewportHeightPx / (2 * Math.tan(THREE.MathUtils.degToRad(persp.fov) / 2))
     : viewportHeightPx / ((ortho.top - ortho.bottom) / ortho.zoom);
 
-  const visible: { chunk: Chunk; dist: number; level: number; maxLevel: number }[] = [];
+  visible.length = 0;
   let total = 0;
   for (const chunk of set.chunks) {
     sphere.set(chunk.center, chunk.radius).applyMatrix4(chunk.mesh.matrixWorld);
@@ -148,7 +180,9 @@ export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewpo
     while (level < last && px < set.levelMinPx[level]! * (1 - HYSTERESIS)) level++;
     chunk.ideal = level;
     // The budget may coarsen by at most one level: beyond that, facets or gaps would show
-    visible.push({ chunk, dist, level, maxLevel: Math.min(last, level + 1) });
+    const entry = pool[visible.length] ?? (pool[visible.length] = { chunk, dist, level, maxLevel: 0 });
+    entry.chunk = chunk; entry.dist = dist; entry.level = level; entry.maxLevel = Math.min(last, level + 1);
+    visible.push(entry);
     total += chunk.mesh.count * set.levelTriangles[level]!;
   }
   if (total > triangleBudget) {
@@ -169,7 +203,7 @@ export function updateLevels(set: ChunkedInstances, camera: THREE.Camera, viewpo
   for (const v of visible) {
     if (v.chunk.level === v.level) continue;
     v.chunk.level = v.level;
-    const g = set.levels[v.level];
+    const g = v.chunk.geoms[v.level];
     v.chunk.mesh.visible = !!g;
     if (g) v.chunk.mesh.geometry = g;
     anyChange = true;
