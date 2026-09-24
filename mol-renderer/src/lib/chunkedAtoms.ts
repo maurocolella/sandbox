@@ -1,7 +1,7 @@
 /*
  Title: chunkedAtoms
  Description: Chunked, level-of-detail atom spheres and bond cylinders built on `chunked`.
- - Atoms: the original 480-triangle UV sphere up close (never more), then icospheres of 320 / 80 / 20.
+ - Atoms: icosphere levels of 1280 / 720 / 320 / 80 / 20 triangles.
  - Bonds: open-ended cylinders (the atom spheres cover the ends) with 12 / 8 / 5 / 3 sides, hidden once
    thinner than a quarter pixel.
  Level thresholds come from each level's geometric error, so switches happen where they are invisible.
@@ -27,14 +27,10 @@ function icosphere(detail: number): THREE.BufferGeometry {
 // screen, so a switch happens where the two levels look the same.
 const MAX_ERROR_PX = 0.5;
 
-// Spheres: finest is SphereGeometry(16, 16), the fixed sphere the viewer always used (480 triangles, 289
-// vertices; its largest deviation is about 1 - cos(pi / 16)). Coarser levels are icospheres:
-// IcosahedronGeometry detail d splits each edge into d + 1 (20 (d + 1)^2 triangles); the edge's central
-// angle is atan(2) / (d + 1) and the largest deviation (at a face center) about 1 - cos(angle / sqrt3).
-const UV_SEGMENTS = 16;
-const ICO_DETAIL = [3, 1, 0]; // 320, 80, 20 triangles
-const icoError = (d: number) => 1 - Math.cos(Math.atan(2) / (d + 1) / Math.sqrt(3));
-const SPHERE_ERRORS = [1 - Math.cos(Math.PI / UV_SEGMENTS), ...ICO_DETAIL.map(icoError)];
+// Spheres: IcosahedronGeometry detail d splits each edge into d + 1 (20 (d + 1)^2 triangles). The edge's
+// central angle is atan(2) / (d + 1); the largest deviation (at a face center) is about 1 - cos(angle/sqrt3).
+const SPHERE_DETAIL = [7, 5, 3, 1, 0]; // 1280, 720, 320, 80, 20 triangles
+const sphereError = (d: number) => 1 - Math.cos(Math.atan(2) / (d + 1) / Math.sqrt(3));
 // Bonds: an n-sided prism deviates from its cylinder by 1 - cos(pi / n); hidden below HIDE_BOND_PX
 const BOND_SIDES = [12, 8, 5, 3]; // 24, 16, 10, 6 triangles
 const bondError = (n: number) => 1 - Math.cos(Math.PI / n);
@@ -42,7 +38,7 @@ const HIDE_BOND_PX = 0.25;
 
 /** Minimum on-screen feature radius for each level but the last: the size at which the next level's error hits the limit. */
 const minPxFor = (errors: number[]) => errors.slice(1).map((e) => MAX_ERROR_PX / e);
-const SPHERE_MIN_PX = minPxFor(SPHERE_ERRORS); // ~39, 9.9, 2.5 px
+const SPHERE_MIN_PX = minPxFor(SPHERE_DETAIL.map(sphereError)); // ~88, 39, 9.9, 2.5 px
 const BOND_MIN_PX = [...minPxFor(BOND_SIDES.map(bondError)), HIDE_BOND_PX]; // ~6.6, 2.6, 1.0, 0.25 px
 
 export interface ChunkedAtomsInput {
@@ -68,7 +64,7 @@ export function buildChunkedAtoms(input: ChunkedAtomsInput): ChunkedInstances {
       return r;
     },
     writeColor: colors ? (i, c, o) => { c[o] = colors[i * 3]! / 255; c[o + 1] = colors[i * 3 + 1]! / 255; c[o + 2] = colors[i * 3 + 2]! / 255; } : undefined,
-    levels: [new THREE.SphereGeometry(1, UV_SEGMENTS, UV_SEGMENTS), ...ICO_DETAIL.map(icosphere)],
+    levels: SPHERE_DETAIL.map(icosphere),
     levelMinPx: SPHERE_MIN_PX,
     material: input.material,
   });
