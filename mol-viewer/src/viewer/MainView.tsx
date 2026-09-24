@@ -14,7 +14,7 @@ import { Leva } from "leva";
 import { StructureControls } from "./StructureControls";
 import { resolveStructureSource, type StructureSource } from "../lib/structureSource";
 
-const INITIAL_SOURCE = "/models/1IGY.pdb";
+const INITIAL_SOURCE = "3J2T";
 
 export function MainView() {
   // Raw text in the field; the structure loads once it resolves (PDB ID, URL or path) and typing pauses
