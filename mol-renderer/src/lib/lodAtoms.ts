@@ -2,14 +2,15 @@
  Title: lodAtoms
  Description: Level-of-detail atom spheres and bond cylinders built on `instancedLod`. The instance data is computed
  from plain arrays (so it can run in a worker); the GPU objects are created from it on the main thread.
- - Atoms: icosphere levels of 1280 / 720 / 320 / 80 / 20 triangles.
+ - Atoms: icosphere levels of 1280 / 720 / 320 / 80 / 20 triangles, then sphere impostors (one triangle)
+   below IMPOSTOR_PX, where an atom is well under a pixel and an impostor looks the same.
  - Bonds: open-ended cylinders (the atom spheres cover the ends) with 12 / 8 / 5 / 3 sides, hidden once
    thinner than a quarter pixel.
  Level thresholds come from each level's geometric error, so switches happen where they are invisible.
 */
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { computeLodData, createLodInstances, type LodBuildProgress, type LodData, type LodInstances } from "./instancedLod";
+import { computeLodData, createLodInstances, type ImpostorLevel, type LodBuildProgress, type LodData, type LodInstances } from "./instancedLod";
 
 /**
  * Indexed icosphere with exact sphere normals. Three's IcosahedronGeometry is non-indexed (3 vertices per
@@ -43,7 +44,22 @@ const HIDE_BOND_PX = 0.25;
 
 /** Minimum on-screen feature radius for each level but the last: the size at which the next level's error hits the limit. */
 const minPxFor = (errors: number[]) => errors.slice(1).map((e) => MAX_ERROR_PX / e);
-const SPHERE_MIN_PX = minPxFor(SPHERE_DETAIL.map(sphereError)); // ~88, 39, 9.9, 2.5 px
+// Below this radius (px) atoms are impostors; the 20-triangle icosphere's range ends there
+const IMPOSTOR_PX = 0.75;
+const SPHERE_MIN_PX = [...minPxFor(SPHERE_DETAIL.map(sphereError)), IMPOSTOR_PX]; // ~88, 39, 9.9, 2.5, 0.75 px
+
+/**
+ * A triangle over the unit circle in the xy plane (counter-clockwise, facing +z), for sphere impostors. It
+ * has the circle's area: at sub-pixel sizes a pixel mixes atom and background by how many of its samples
+ * the triangle covers, so equal area keeps atoms as bright as meshes of the same size.
+ */
+function impostorTriangle(): ImpostorLevel {
+  const g = new THREE.BufferGeometry();
+  const side = Math.sqrt((4 * Math.PI) / Math.sqrt(3)), R = side / Math.sqrt(3); // area pi, circumradius ~1.56
+  g.setAttribute("position", new THREE.Float32BufferAttribute([0, R, 0, -side / 2, -R / 2, 0, side / 2, -R / 2, 0], 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+  return { impostor: g };
+}
 const BOND_MIN_PX = [...minPxFor(BOND_SIDES.map(bondError)), HIDE_BOND_PX]; // ~6.6, 2.6, 1.0, 0.25 px
 
 export interface LodAtomsInput {
@@ -73,7 +89,7 @@ export function atomLodData(input: LodAtomsInput, onProgress?: (p: LodBuildProgr
 }
 
 export function createLodAtoms(data: LodData, material: THREE.Material): LodInstances {
-  return createLodInstances(data, SPHERE_DETAIL.map(icosphere), SPHERE_MIN_PX, material);
+  return createLodInstances(data, [...SPHERE_DETAIL.map(icosphere), impostorTriangle()], SPHERE_MIN_PX, material);
 }
 
 export interface LodBondsInput {

@@ -6,7 +6,8 @@
    vertex shader fetches the instance's transform from the texture.
  - Each instance picks its level from its own on-screen size: its feature (atom or bond radius) projected at
    its nearest point, with hysteresis (refine above a threshold +15%, coarsen below it -15%) so sizes near a
-   threshold don't flicker. A null level hides the instance.
+   threshold don't flicker. A null level hides the instance; an impostor level draws one camera-facing
+   triangle per instance, shaded as a sphere (for sub-pixel sizes).
  - A bounding-sphere hierarchy (k-d split, midpoint of the longest axis) over the instances skips nodes
    outside the view, and gives a whole node one level when all of its instances would get it anyway, so
    only leaves straddling a threshold are visited instance by instance. Nearer nodes are visited first, so
@@ -91,8 +92,15 @@ export function lodDataTransferables(d: LodData): ArrayBuffer[] {
     .map((a) => a.buffer as ArrayBuffer);
 }
 
-/** Makes `material` read each instance's transform and color from textures, indexed by the `aInst` attribute. */
-function readInstancesFromTextures(material: THREE.Material, matrices: THREE.DataTexture, colors: THREE.DataTexture) {
+/**
+ * Makes `material` read each instance's transform and color from textures, indexed by the `aInst` attribute.
+ * With `impostor`, the geometry is a camera-facing triangle in the xy plane over a unit circle, shaded as a
+ * sphere of the instance's radius (the normal is the sphere's, clamped to its rim outside the circle, as a
+ * sub-pixel mesh's interpolated normals are). For sub-pixel levels, where it looks the same as a mesh at a
+ * fraction of the cost.
+ */
+function readInstancesFromTextures(material: THREE.Material, matrices: THREE.DataTexture, colors: THREE.DataTexture, impostor = false) {
+  material.customProgramCacheKey = () => (impostor ? "lod-instances-impostor" : "lod-instances");
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uInstMatrix = { value: matrices };
     shader.uniforms.uInstColor = { value: colors };
@@ -121,6 +129,21 @@ transformed = (lodM * vec4(transformed, 1.0)).xyz;`);
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vInstColor;")
       .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= vInstColor;");
+    if (!impostor) return;
+    // Billboard at the sphere's front, facing the camera (view space)
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vImp;")
+      .replace("#include <project_vertex>", `vImp = position.xy;
+float lodR = length(lodM[0].xyz);
+vec4 lodC = modelViewMatrix * vec4(lodM[3].xyz, 1.0);
+vec4 mvPosition = vec4(lodC.xyz + vec3(position.xy * lodR, lodR), 1.0);
+gl_Position = projectionMatrix * mvPosition;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vImp;")
+      .replace("#include <normal_fragment_begin>", `vec2 lodV = vImp * min(1.0, inversesqrt(max(dot(vImp, vImp), 1e-8)));
+float faceDirection = 1.0;
+vec3 normal = vec3(lodV, sqrt(max(0.0, 1.0 - dot(lodV, lodV))));
+vec3 nonPerturbedNormal = normal;`);
   };
 }
 
@@ -203,20 +226,31 @@ export function computeLodData(input: LodDataInput, onProgress?: (p: LodBuildPro
   };
 }
 
+/** A level drawn as impostors (see readInstancesFromTextures) rather than as its geometry. */
+export interface ImpostorLevel { impostor: THREE.BufferGeometry }
+
 /** GPU objects for a set: textures for its data, one mesh per drawable level. */
-export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry | null)[], levelMinPx: number[], material: THREE.Material): LodInstances {
+export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry | ImpostorLevel | null)[], levelMinPx: number[], material: THREE.Material): LodInstances {
   const { count, centers, extents, features, order } = data;
   const matrices = new THREE.DataTexture(data.matData, TEX_WIDTH, data.matData.length / 4 / TEX_WIDTH, THREE.RGBAFormat, THREE.FloatType);
   const colors = new THREE.DataTexture(data.colorData, TEX_WIDTH, data.colorData.length / 4 / TEX_WIDTH, THREE.RGBAFormat, THREE.UnsignedByteType);
   matrices.needsUpdate = true;
   colors.needsUpdate = true;
   readInstancesFromTextures(material, matrices, colors);
+  // Impostor levels get a material of their own (another shader)
+  let impostorMaterial: THREE.Material | null = null;
+  const materialFor = (level: THREE.BufferGeometry | ImpostorLevel) => {
+    if (!("impostor" in level)) return material;
+    if (!impostorMaterial) { impostorMaterial = material.clone(); readInstancesFromTextures(impostorMaterial, matrices, colors, true); }
+    return impostorMaterial;
+  };
 
   // One mesh per drawable level, drawing the instances listed in its `aInst` attribute
   const group = new THREE.Group();
   const lists: (Uint32Array | null)[] = [];
-  const meshes = levels.map((base) => {
-    if (!base) { lists.push(null); return null; }
+  const meshes = levels.map((level) => {
+    if (!level) { lists.push(null); return null; }
+    const base = "impostor" in level ? level.impostor : level;
     const g = new THREE.InstancedBufferGeometry();
     for (const [name, attr] of Object.entries(base.attributes)) g.setAttribute(name, attr);
     if (base.index) g.setIndex(base.index);
@@ -224,7 +258,7 @@ export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry 
     lists.push(list);
     g.setAttribute("aInst", new THREE.InstancedBufferAttribute(list, 1).setUsage(THREE.DynamicDrawUsage));
     g.instanceCount = 0;
-    const mesh = new THREE.Mesh(g, material);
+    const mesh = new THREE.Mesh(g, materialFor(level));
     mesh.frustumCulled = false; // culled per node here
     mesh.visible = false;
     mesh.raycast = () => {}; // hover picking uses its own grid
@@ -242,10 +276,11 @@ export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry 
     lastView: new Float64Array(33).fill(NaN),
     dispose() {
       for (const mesh of meshes) mesh?.geometry.dispose();
-      for (const g of levels) g?.dispose();
+      for (const level of levels) (level && "impostor" in level ? level.impostor : level)?.dispose();
       matrices.dispose();
       colors.dispose();
       material.dispose();
+      (impostorMaterial as THREE.Material | null)?.dispose();
     },
   };
 }
