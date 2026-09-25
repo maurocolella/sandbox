@@ -7,8 +7,9 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "pnpm exec vite",
-    "build": "pnpm exec tsc -b && pnpm exec vite build",
+    "build:deps": "pnpm --filter chem-surface --filter pdb-parser --filter cif-parser build",
+    "dev": "pnpm run build:deps && pnpm exec vite",
+    "build": "pnpm run build:deps && pnpm exec tsc -b && pnpm exec vite build",
     "lint": "pnpm exec eslint .",
     "preview": "pnpm exec vite preview"
   },
