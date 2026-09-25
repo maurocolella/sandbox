@@ -18,7 +18,7 @@ import type { RenderControls, OverlayControls } from "./types";
 import { useHoverOverlays } from "../lib/hooks/useHoverOverlays";
 import { useHoverState } from "../lib/hooks/useHoverState";
 import { useCameraMotion } from "../lib/hooks/useCameraMotion";
-import { GridRaycast, type BBox } from "./GridRaycast";
+import { AtomRaycast } from "./AtomRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
@@ -181,12 +181,8 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           )}
         </group>
         {props.renderControls.renderMode === "spheres" && props.renderControls.showAtoms && (
-          <GridRaycast
-            positions={filteredScene?.atoms?.positions}
-            radii={filteredScene?.atoms?.radii}
-            count={filteredScene?.atoms?.count ?? 0}
-            radiusScale={props.renderControls.radiusScale}
-            bbox={filteredScene?.bbox as BBox | undefined}
+          <AtomRaycast
+            atoms={objects.atoms}
             isCameraMovingRef={isCameraMoving}
             onHover={onHover}
             onOut={onOut}

@@ -16,6 +16,7 @@
    would get it anyway. Nearer nodes are visited first, so each level draws roughly front to back.
  - The lists are rebuilt when the view changes (a leaf id per LEAF_SIZE instances keeps this cheap), and
    only the part that differs from the last upload is sent to the GPU.
+ - `raycastSpheres` picks the nearest sphere instance along a ray through the same hierarchy.
 */
 import * as THREE from "three";
 
@@ -32,6 +33,9 @@ export interface LodInstances {
   levelMinPx: number[];
   /** Level of each leaf (hysteresis state); UNSET before its first evaluation. */
   state: Uint8Array;
+  /** Transform rows in hierarchy order (the matrix texture's data), and the instance index of each slot. */
+  matData: Float32Array;
+  order: Uint32Array;
   /** Hierarchy nodes: instance range (in hierarchy order), children (-1 for leaves), bounding sphere, feature range. */
   nodeStart: Uint32Array;
   nodeEnd: Uint32Array;
@@ -70,6 +74,8 @@ export interface LodData {
   /** Transform rows (3 RGBA texels per instance) and colors (1 RGBA8 texel per instance), TEX_WIDTH wide, in hierarchy order. */
   matData: Float32Array;
   colorData: Uint8Array;
+  /** Instance index of each slot in hierarchy order. */
+  order: Uint32Array;
   nodeStart: Uint32Array;
   nodeEnd: Uint32Array;
   nodeLeft: Int32Array;
@@ -80,7 +86,7 @@ export interface LodData {
 
 /** The buffers behind a LodData (for zero-copy transfer from a worker). */
 export function lodDataTransferables(d: LodData): ArrayBuffer[] {
-  return [d.matData, d.colorData, d.nodeStart, d.nodeEnd, d.nodeLeft, d.nodeRight, d.nodeSphere, d.nodeFeature]
+  return [d.matData, d.colorData, d.order, d.nodeStart, d.nodeEnd, d.nodeLeft, d.nodeRight, d.nodeSphere, d.nodeFeature]
     .map((a) => a.buffer as ArrayBuffer);
 }
 
@@ -244,7 +250,7 @@ export function computeLodData(input: LodDataInput, onProgress?: (p: LodBuildPro
   }
 
   return {
-    count, matData, colorData,
+    count, matData, colorData, order,
     nodeStart: Uint32Array.from(nStart), nodeEnd: Uint32Array.from(nEnd),
     nodeLeft: Int32Array.from(nLeft), nodeRight: Int32Array.from(nRight),
     nodeSphere: Float32Array.from(nSphere), nodeFeature: Float32Array.from(nFeature),
@@ -293,7 +299,7 @@ export function createLodInstances(data: LodData, levels: (THREE.BufferGeometry 
   });
 
   return {
-    group, count, meshes, levelMinPx,
+    group, count, meshes, levelMinPx, matData: data.matData, order: data.order,
     state: new Uint8Array(leafCount).fill(UNSET),
     nodeStart: data.nodeStart, nodeEnd: data.nodeEnd, nodeLeft: data.nodeLeft, nodeRight: data.nodeRight,
     nodeSphere: data.nodeSphere, nodeFeature: data.nodeFeature,
@@ -415,4 +421,63 @@ export function updateLod(set: LodInstances, camera: THREE.Camera, viewportHeigh
     mesh.visible = n > 0;
   }
   return changed;
+}
+
+const rayO = new THREE.Vector3();
+const rayD = new THREE.Vector3();
+let rayStack = new Int32Array(256);
+let rayStackT = new Float64Array(256);
+
+/**
+ * Index of the nearest instance hit by a world-space ray, for sets of spheres (uniform scale: radius is the
+ * matrix's first diagonal element), or -1. Walks the hierarchy nearest-first and skips nodes whose entry is
+ * beyond the best hit so far, so only the leaves along the ray are tested.
+ */
+export function raycastSpheres(set: LodInstances, origin: THREE.Vector3, direction: THREE.Vector3): number {
+  if (set.count === 0) return -1;
+  invWorld.copy(set.group.matrixWorld).invert();
+  rayO.copy(origin).applyMatrix4(invWorld);
+  rayD.copy(direction).transformDirection(invWorld);
+  const ox = rayO.x, oy = rayO.y, oz = rayO.z, dx = rayD.x, dy = rayD.y, dz = rayD.z;
+  const { nodeStart, nodeEnd, nodeLeft, nodeRight, nodeSphere, matData, order } = set;
+  /** Entry distance along the ray into a sphere (0 if the origin is inside), or Infinity on a miss. */
+  const enter = (cx: number, cy: number, cz: number, r: number) => {
+    const px = ox - cx, py = oy - cy, pz = oz - cz;
+    const b = px * dx + py * dy + pz * dz, c = px * px + py * py + pz * pz - r * r;
+    if (c <= 0) return 0;
+    if (b > 0) return Infinity; // outside and pointing away
+    const disc = b * b - c;
+    return disc < 0 ? Infinity : -b - Math.sqrt(disc);
+  };
+  const nodeEnter = (n: number) => enter(nodeSphere[n * 4]!, nodeSphere[n * 4 + 1]!, nodeSphere[n * 4 + 2]!, nodeSphere[n * 4 + 3]!);
+
+  let best = -1, bestT = Infinity, top = 0;
+  const t0 = nodeEnter(0);
+  if (t0 === Infinity) return -1;
+  rayStack[0] = 0; rayStackT[0] = t0; top = 1;
+  while (top > 0) {
+    top--;
+    const n = rayStack[top]!;
+    if (rayStackT[top]! >= bestT) continue;
+    const left = nodeLeft[n]!;
+    if (left < 0) {
+      for (let k = nodeStart[n]!, end = nodeEnd[n]!; k < end; k++) {
+        const o = k * 12; // rows 0..2 of instance k: translation in column 3, radius on the diagonal
+        const t = enter(matData[o + 3]!, matData[o + 7]!, matData[o + 11]!, matData[o]!);
+        if (t < bestT && t > 0) { bestT = t; best = k; }
+      }
+      continue;
+    }
+    const right = nodeRight[n]!;
+    const tl = nodeEnter(left), tr = nodeEnter(right);
+    if (top + 2 > rayStack.length) {
+      const s2 = new Int32Array(rayStack.length * 2); s2.set(rayStack); rayStack = s2;
+      const t2 = new Float64Array(rayStackT.length * 2); t2.set(rayStackT); rayStackT = t2;
+    }
+    // Farther child first on the stack, so the nearer one is walked first
+    const [nearN, nearT, farN, farT] = tl <= tr ? [left, tl, right, tr] : [right, tr, left, tl];
+    if (farT < bestT) { rayStack[top] = farN; rayStackT[top] = farT; top++; }
+    if (nearT < bestT) { rayStack[top] = nearN; rayStackT[top] = nearT; top++; }
+  }
+  return best < 0 ? -1 : order[best]!;
 }
