@@ -17,6 +17,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "pnpm exec tsc -p tsconfig.json",
+    "prepare": "pnpm run build",
     "clean": "rm -rf dist || true"
   }
 }
