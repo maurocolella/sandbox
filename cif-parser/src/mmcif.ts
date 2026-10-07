@@ -479,6 +479,7 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
   }
 
   const entryId = fieldStr(block?.category("entry"), "id", 0) || block?.name || undefined;
+  const title = fieldStr(block?.category("struct"), "title", 0) || undefined;
   const scene: MolScene = {
     atoms: { count, positions, radii, colors, element, chainIndex, residueIndex, serial, names },
     bonds,
@@ -490,7 +491,7 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
       secondary: secondary.length ? secondary : undefined,
     },
     bbox: count > 0 ? { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } : undefined,
-    metadata: { pdbId: entryId, modelCount: Math.max(1, models.size), warnings },
+    metadata: { pdbId: entryId, title, modelCount: Math.max(1, models.size), warnings },
   };
   try { scene.index = buildSceneIndex(scene); } catch { /* index is optional */ }
   return scene;

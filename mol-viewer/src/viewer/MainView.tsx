@@ -187,6 +187,7 @@ export function MainView() {
 
       <SideColumn
         objectName={scene?.metadata?.pdbId ?? source.pdbId}
+        objectTitle={scene?.metadata?.title}
         chains={chains}
         chainSelected={chainSelected}
         onToggleChain={handleToggleChain}

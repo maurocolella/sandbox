@@ -47,6 +47,7 @@ export interface MolScene {
   bbox?: { min: [number, number, number]; max: [number, number, number] };
   metadata?: {
     pdbId?: string;
+    title?: string;
     modelCount?: number;
     warnings?: string[];
   };

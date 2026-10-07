@@ -219,6 +219,7 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
   let effectiveModelSelection: number | null | undefined = undefined;
   let seenModelRecords = false;
   let lineNum = 0;
+  const header = new HeaderRecords();
 
   for (let i = 0, n = pdbText.length; i <= n; ) {
     let j = pdbText.indexOf('\n', i);
@@ -229,6 +230,7 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
     lineNum++;
     if (line.length < 6) continue;
     const rec = slice(line, 0, 6).toUpperCase();
+    if (header.read(rec, line)) continue;
     if (rec.startsWith("MODEL")) {
       seenModelRecords = true;
       modelCount++;
@@ -353,7 +355,7 @@ export async function parsePdbToMolSceneAsync(pdbText: string, options: ParseOpt
     backbone: backboneBuilt && { positions: backboneBuilt.positions, segments: backboneBuilt.segments, residueOfPoint: backboneBuilt.residueOfPoint, orientation: backboneBuilt.orientation },
     tables: { chains, residues, chainSegments: chainSegments.length ? chainSegments : undefined, secondary },
     bbox: count > 0 ? { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } : undefined,
-    metadata: { warnings: W.toArray(), modelCount: Math.max(1, modelCount) }
+    metadata: { pdbId: header.idCode, title: header.title, warnings: W.toArray(), modelCount: Math.max(1, modelCount) }
   };
 
   try { scene.index = buildSceneIndex(scene); } catch {}
@@ -680,6 +682,23 @@ function constructBonds(
   return { count: bCount, indexA, indexB, order };
 }
 
+
+/** HEADER id code and TITLE text (continuation lines joined). */
+class HeaderRecords {
+  idCode: string | undefined;
+  private titleLines: string[] = [];
+  /** True if the line was a HEADER or TITLE record (and is consumed). */
+  read(rec: string, line: string): boolean {
+    if (rec === "HEADER") { this.idCode = line.slice(62, 66).trim() || undefined; return true; }
+    if (rec === "TITLE ") { this.titleLines.push(line.slice(10, 80).trim()); return true; }
+    return false;
+  }
+  get title(): string | undefined {
+    const t = this.titleLines.join(" ").replace(/\s+/g, " ").trim();
+    return t || undefined;
+  }
+}
+
 export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}): MolScene {
   const { altLocPolicy = "occupancy", modelSelection, bondPolicy = "conect+heuristic" } = options;
   const W = new WarningCollector();
@@ -712,6 +731,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
   let effectiveModelSelection: number | null | undefined = undefined; // undefined until first MODEL seen
   let seenModelRecords = false;
   let lineNum = 0;
+  const header = new HeaderRecords();
 
   // Single-pass line scanner (avoid split and second pass)
   for (let i = 0, n = pdbText.length; i <= n; ) {
@@ -723,6 +743,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
     lineNum++;
     if (line.length < 6) continue;
     const rec = slice(line, 0, 6).toUpperCase();
+    if (header.read(rec, line)) continue;
     if (rec.startsWith("MODEL")) {
       seenModelRecords = true;
       modelCount++;
@@ -903,7 +924,7 @@ export function parsePdbToMolScene(pdbText: string, options: ParseOptions = {}):
     },
     tables: { chains, residues, chainSegments: chainSegments.length ? chainSegments : undefined, secondary },
     bbox: count > 0 ? { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] } : undefined,
-    metadata: { warnings: W.toArray(), modelCount: Math.max(1, modelCount) }
+    metadata: { pdbId: header.idCode, title: header.title, warnings: W.toArray(), modelCount: Math.max(1, modelCount) }
   };
 
   // Build fast lookup indices
