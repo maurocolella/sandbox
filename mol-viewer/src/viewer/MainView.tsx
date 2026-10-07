@@ -39,13 +39,11 @@ const LEVA_THEME = {
   sizes: { rootWidth: "100%" },
 };
 
-type WindowId = "parsing" | "surface" | "styling" | "spheres" | "selection" | "debug";
+type WindowId = "parsing" | "surface" | "styling" | "debug";
 const WINDOWS: { id: WindowId; label: string }[] = [
   { id: "parsing", label: "Parsing" },
   { id: "surface", label: "Surface" },
   { id: "styling", label: "Styling" },
-  { id: "spheres", label: "Spheres" },
-  { id: "selection", label: "Selection" },
   { id: "debug", label: "Debug" },
 ];
 
@@ -68,7 +66,7 @@ export function MainView() {
   const [pocketsOn, setPocketsOn] = useState(false);
   const [continuousRender, setContinuousRender] = useState(false);
   const [open, setOpen] = usePersistentState<Record<WindowId, boolean>>("mol-viewer:windows", {
-    parsing: false, surface: false, styling: false, spheres: false, selection: false, debug: true,
+    parsing: false, surface: false, styling: false, debug: true,
   });
   const toggleWindow = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id as WindowId] }));
 
@@ -255,8 +253,6 @@ export function MainView() {
       {levaWindow("parsing", "Parsing", 0)}
       {levaWindow("surface", "Surface", 1)}
       {levaWindow("styling", "Styling", 2)}
-      {levaWindow("spheres", "Spheres", 3)}
-      {levaWindow("selection", "Selection", 4)}
       {open.debug && (
         <FloatingWindow id="debug" title="Debug" width={240} defaultPosition={{ x: 12, y: window.innerHeight - 260 }} onClose={() => toggleWindow("debug")}>
           <div ref={setStatsEl} className="mb-2 [&>div]:!relative" />
