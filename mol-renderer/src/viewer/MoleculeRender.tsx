@@ -166,13 +166,13 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
           {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
-          {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
+          {props.renderControls.renderMode !== "spheres" && (
             <>
-              <primitive key={keys.ribbon} object={ribbonGroup} />
+              {/* The ribbon is the backbone here: the Backbone toggle hides it */}
+              {props.renderControls.showBackbone && ribbonGroup && <primitive key={keys.ribbon} object={ribbonGroup} />}
               {props.renderControls.showBonds && objects.bonds && (
                 <InstancesLod key={keys.bonds} set={objects.bonds} onDrawn={objects.bondsDrawn} />
               )}
-              {props.renderControls.showBackbone && objects.backbone && <primitive key={keys.backbone} object={objects.backbone} />}
             </>
           )}
           {props.renderControls.renderMode === "spheres" && (
