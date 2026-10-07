@@ -19,7 +19,7 @@ const ADDITIVES = new Set([
   "MOH", "DMS", "ACM", "TRS", "MES", "EPE", "BME", "DTT", "IMD", "NH4",
 ]);
 const CARBON = new THREE.Color(0x33cc33); // PyMOL's ligand green
-const BALL_SCALE = 0.32; // of the VDW radius; regular spheres default to 0.3
+const BALL_OVER = 1.07; // ligand balls just cover the regular spheres (same radius scale)
 const STICK_RADIUS = 0.12; // regular bonds are 0.06
 const MAX_LABELS = 100;
 // Inline styles (this package has no CSS of its own); the host's UI tokens apply when defined
@@ -59,7 +59,7 @@ function findLigands(scene: MolScene) {
   return { atoms, ligands };
 }
 
-export function LigandLayer({ scene }: { scene: MolScene | null }) {
+export function LigandLayer({ scene, radiusScale }: { scene: MolScene | null; radiusScale: number }) {
   const invalidate = useThree((s) => s.invalidate);
   const { group, ligands } = useMemo(() => {
     const group = new THREE.Group();
@@ -71,7 +71,7 @@ export function LigandLayer({ scene }: { scene: MolScene | null }) {
 
     const balls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 3), new THREE.MeshStandardMaterial({ roughness: 0.4 }), atoms.length);
     atoms.forEach((i, k) => {
-      const r = (R?.[i] ?? 1.5) * BALL_SCALE;
+      const r = (R?.[i] ?? 1.5) * radiusScale * BALL_OVER;
       balls.setMatrixAt(k, m.compose(p.set(P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!), q.identity(), s.set(r, r, r)));
       if (E?.[i] === 6 || !C) color.copy(CARBON);
       else color.setRGB(C[i * 3]! / 255, C[i * 3 + 1]! / 255, C[i * 3 + 2]! / 255);
@@ -106,7 +106,7 @@ export function LigandLayer({ scene }: { scene: MolScene | null }) {
     }
     group.traverse((o) => { o.raycast = () => {}; });
     return { group, ligands };
-  }, [scene]);
+  }, [scene, radiusScale]);
 
   useEffect(() => {
     invalidate();

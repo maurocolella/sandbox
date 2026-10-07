@@ -16,7 +16,7 @@ export type ControlWindow = "parsing" | "surface" | "styling";
 const PARSING_DEFAULTS = { altLocPolicy: "occupancy", bondPolicy: "conect+heuristic", useModelSelection: false, modelSelection: 1 };
 const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, wireframe: false, opacity: 1 };
 export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
-const stylingDefaults = (theme: Theme) => ({ background: DEFAULT_BACKGROUND[theme], radiusScale: 0.3, hoverTint: "#ff00ff", onTopHighlight: true });
+const stylingDefaults = (theme: Theme) => ({ background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true });
 
 export interface RendererControls {
   stores: Record<ControlWindow, Store>;

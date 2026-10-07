@@ -163,7 +163,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
         <group>
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
-          {props.renderControls.showLigands && <LigandLayer scene={filteredScene} />}
+          {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} />}
           {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
