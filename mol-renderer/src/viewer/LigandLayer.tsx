@@ -1,7 +1,7 @@
 /*
  Title: LigandLayer
  Description: Ligands (non-polymer residues of two or more atoms, other than water and common
- crystallisation additives, as BioLiP excludes them) as ball-and-stick with green
+ crystallisation additives, as BioLiP excludes them) as ball-and-stick with wheat
  carbons, labelled "NAME chain seq" (clickable), in every representation. Drawn slightly larger than the regular atoms
  and bonds so they cover them; picking and hover still go through the regular atoms.
 */
@@ -18,7 +18,8 @@ const ADDITIVES = new Set([
   "GOL", "EDO", "PEG", "PGE", "PG4", "1PE", "P6G", "12P", "15P", "2PE", "MPD", "MRD", "BU1", "BU3", "IPA", "EOH",
   "MOH", "DMS", "ACM", "TRS", "MES", "EPE", "BME", "DTT", "IMD", "NH4",
 ]);
-const CARBON = new THREE.Color(0x33cc33); // PyMOL's ligand green
+// PyMOL "wheat": outside both PyMOL's chain colour cycle (so ligands stand out from ribbons) and element colours
+const CARBON = new THREE.Color(0xfcd1a5);
 const BALL_OVER = 1.07; // ligand balls just cover the regular spheres (same radius scale)
 const STICK_RADIUS = 0.12; // regular bonds are 0.06
 const MAX_LABELS = 100;
