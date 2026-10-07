@@ -15,6 +15,8 @@ export interface RenderControls {
   renderMode: "spheres" | "ribbon-tube" | "ribbon-flat";
   showAtoms: boolean;
   showBonds: boolean;
+  /** Ligands as labelled ball-and-stick, in every representation. */
+  showLigands: boolean;
   showBackbone: boolean;
   radiusScale: number;
 }

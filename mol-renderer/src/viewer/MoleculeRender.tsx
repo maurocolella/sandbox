@@ -22,6 +22,7 @@ import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 import { AtomRaycast } from "./AtomRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { PocketLayer, type PocketMesh } from "./PocketLayer";
+import { LigandLayer } from "./LigandLayer";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
 import { InstancesLod } from "./InstancesLod";
@@ -162,6 +163,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
         <group>
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
+          {props.renderControls.showLigands && <LigandLayer scene={filteredScene} />}
           {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />

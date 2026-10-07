@@ -77,7 +77,7 @@ export function MainView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);
   const [representation, setRepresentation] = useState<Representation>("spheres");
-  const [show, setShow] = useState({ atoms: true, bonds: true, backbone: true });
+  const [show, setShow] = useState({ atoms: true, bonds: true, backbone: true, ligands: true });
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("residue");
   const [surfaceOn, setSurfaceOn] = useState(false);
   const [pocketsOn, setPocketsOn] = useState(false);
@@ -190,8 +190,9 @@ export function MainView() {
     showAtoms: show.atoms,
     showBonds: show.bonds,
     showBackbone: show.backbone,
+    showLigands: show.ligands,
     radiusScale: spheres.radiusScale,
-  }), [representation, show.atoms, show.bonds, show.backbone, spheres.radiusScale]);
+  }), [representation, show.atoms, show.bonds, show.backbone, show.ligands, spheres.radiusScale]);
 
   const overlayControls = useMemo<OverlayControls>(() => ({
     mode: (selectionMode === "none" ? "atom" : selectionMode) as "atom" | "residue" | "chain",

@@ -22,8 +22,8 @@ export interface SideColumnProps {
   onSelectionMode: (m: SelectionMode) => void;
   representation: Representation;
   onRepresentation: (r: Representation) => void;
-  show: { atoms: boolean; bonds: boolean; backbone: boolean };
-  onShow: (key: "atoms" | "bonds" | "backbone", value: boolean) => void;
+  show: { atoms: boolean; bonds: boolean; backbone: boolean; ligands: boolean };
+  onShow: (key: "atoms" | "bonds" | "backbone" | "ligands", value: boolean) => void;
   surface: boolean;
   onSurface: (on: boolean) => void;
   pockets: boolean;
@@ -149,6 +149,7 @@ export function SideColumn(props: SideColumnProps) {
                 <Toggle label="Atoms" checked={props.show.atoms} disabled={props.representation !== "spheres"} onChange={(v) => props.onShow("atoms", v)} />
                 <Toggle label="Bonds" checked={props.show.bonds} onChange={(v) => props.onShow("bonds", v)} />
                 <Toggle label="Backbone" checked={props.show.backbone} disabled={props.representation !== "spheres"} onChange={(v) => props.onShow("backbone", v)} />
+                <Toggle label="Ligands" checked={props.show.ligands} onChange={(v) => props.onShow("ligands", v)} />
               </div>
             </Section>
             <Section title="Surface">
