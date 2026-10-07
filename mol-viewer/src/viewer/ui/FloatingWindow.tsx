@@ -35,7 +35,7 @@ export function FloatingWindow({ id, title, width, defaultPosition, onClose, onR
       onPointerDown={() => setZ(++topZ)}
     >
       <div
-        className="flex cursor-move select-none items-center justify-between border-b border-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-zinc-300"
+        className="flex cursor-move select-none items-center justify-between border-b border-(--ui-border) px-3 py-1.5 text-xs font-semibold tracking-wide text-(--ui-fg)"
         onPointerDown={(e) => {
           drag.current = { dx: e.clientX - x, dy: e.clientY - y };
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -46,7 +46,7 @@ export function FloatingWindow({ id, title, width, defaultPosition, onClose, onR
         <span className="flex-1">{title}</span>
         {onReset && (
           <button
-            className="rounded px-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            className="rounded px-1 text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={onReset}
             title="Reset to defaults"
@@ -56,7 +56,7 @@ export function FloatingWindow({ id, title, width, defaultPosition, onClose, onR
           </button>
         )}
         <button
-          className="-mr-1 rounded px-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          className="-mr-1 rounded px-1 text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onClose}
           aria-label={`Close ${title}`}

@@ -36,8 +36,8 @@ const MIN_WIDTH = 200, MAX_WIDTH = 480;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="border-t border-white/10 px-3 py-2.5 first:border-t-0">
-      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{title}</div>
+    <section className="border-t border-(--ui-border) px-3 py-2.5 first:border-t-0">
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-(--ui-muted)">{title}</div>
       {children}
     </section>
   );
@@ -45,12 +45,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div className="flex rounded-md bg-white/5 p-0.5">
+    <div className="flex rounded-md bg-(--ui-input) p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
           onClick={() => onChange(o.value)}
-          className={`flex-1 rounded px-1.5 py-1 text-xs transition-colors ${value === o.value ? "bg-white/15 text-zinc-50" : "text-zinc-300 hover:bg-white/10"}`}
+          className={`flex-1 rounded px-1.5 py-1 text-xs transition-colors ${value === o.value ? "bg-(--ui-active) text-(--ui-strong)" : "text-(--ui-fg) hover:bg-(--ui-hover)"}`}
         >
           {o.label}
         </button>
@@ -63,13 +63,13 @@ function Toggle({ label, checked, disabled, onChange }: { label: string; checked
   return (
     <label className={`flex items-center justify-between py-0.5 text-sm ${disabled ? "opacity-40" : ""}`}>
       <span>{label}</span>
-      <input type="checkbox" className="h-4 w-4 accent-zinc-300" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" className="h-4 w-4 accent-(--ui-fg)" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
     </label>
   );
 }
 
 const IconButton = ({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) => (
-  <button onClick={onClick} title={label} aria-label={label} className="rounded px-1.5 py-0.5 text-zinc-300 hover:bg-white/10 hover:text-zinc-50">
+  <button onClick={onClick} title={label} aria-label={label} className="rounded px-1.5 py-0.5 text-(--ui-fg) hover:bg-(--ui-hover) hover:text-(--ui-strong)">
     {children}
   </button>
 );
@@ -87,7 +87,7 @@ export function SideColumn(props: SideColumnProps) {
         {(right !== layout.collapsed) ? "▸" : "◂"}
       </IconButton>
       <IconButton label={right ? "Move to the left" : "Move to the right"} onClick={() => setLayout({ ...layout, side: right ? "left" : "right" })}>⇄</IconButton>
-      {!layout.collapsed && <span className="mx-1 flex-1 text-xs font-semibold tracking-wide text-zinc-300">{props.objectName ?? "No object"}</span>}
+      {!layout.collapsed && <span className="mx-1 flex-1 text-xs font-semibold tracking-wide text-(--ui-fg)">{props.objectName ?? "No object"}</span>}
     </div>
   );
 
@@ -99,15 +99,15 @@ export function SideColumn(props: SideColumnProps) {
       {header}
       {!layout.collapsed && (
         <>
-          <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/10">
+          <div className="min-h-0 flex-1 overflow-y-auto border-t border-(--ui-border)">
             <Section title="Objects">
               {props.chains.length === 0 ? (
-                <div className="text-xs text-zinc-500">Nothing loaded</div>
+                <div className="text-xs text-(--ui-strong)0">Nothing loaded</div>
               ) : (
                 <>
                   <label className="flex items-center justify-between text-sm">
                     <span className="truncate font-medium">{props.objectName ?? "structure"}</span>
-                    <input type="checkbox" className="h-4 w-4 accent-zinc-300" checked={allVisible} onChange={(e) => (e.target.checked ? props.onAllChains() : props.onNoChains())} />
+                    <input type="checkbox" className="h-4 w-4 accent-(--ui-fg)" checked={allVisible} onChange={(e) => (e.target.checked ? props.onAllChains() : props.onNoChains())} />
                   </label>
                   <div className="mb-1.5" />
                   <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto">
@@ -117,7 +117,7 @@ export function SideColumn(props: SideColumnProps) {
                         <button
                           key={c.index}
                           onClick={() => props.onToggleChain(c.index, !on)}
-                          className={`min-w-7 rounded px-1.5 py-0.5 font-mono text-xs transition-colors ${on ? "bg-white/15 text-zinc-50" : "bg-white/5 text-zinc-500 hover:text-zinc-300"}`}
+                          className={`min-w-7 rounded px-1.5 py-0.5 font-mono text-xs transition-colors ${on ? "bg-(--ui-active) text-(--ui-strong)" : "bg-(--ui-input) text-(--ui-strong)0 hover:text-(--ui-strong)"}`}
                           title={`Chain ${c.id || "(blank)"}`}
                         >
                           {c.id || "·"}
@@ -126,8 +126,8 @@ export function SideColumn(props: SideColumnProps) {
                     })}
                   </div>
                   <div className="mt-2 flex gap-1">
-                    <button onClick={props.onAllChains} className="rounded px-2 py-0.5 text-xs text-zinc-300 hover:bg-white/10">All</button>
-                    <button onClick={props.onNoChains} className="rounded px-2 py-0.5 text-xs text-zinc-300 hover:bg-white/10">None</button>
+                    <button onClick={props.onAllChains} className="rounded px-2 py-0.5 text-xs text-(--ui-fg) hover:bg-(--ui-hover)">All</button>
+                    <button onClick={props.onNoChains} className="rounded px-2 py-0.5 text-xs text-(--ui-fg) hover:bg-(--ui-hover)">None</button>
                   </div>
                 </>
               )}
@@ -158,7 +158,7 @@ export function SideColumn(props: SideColumnProps) {
           </div>
           {/* Inner edge: drag to resize */}
           <div
-            className={`absolute top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/20 ${right ? "-left-0.5" : "-right-0.5"} rounded`}
+            className={`absolute top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-(--ui-active) ${right ? "-left-0.5" : "-right-0.5"} rounded`}
             onPointerDown={(e) => { resize.current = { x: e.clientX, width: layout.width }; e.currentTarget.setPointerCapture(e.pointerId); }}
             onPointerMove={(e) => {
               if (!resize.current) return;

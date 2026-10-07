@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+/* UI colour tokens: light by default, dark under html.dark (set by useTheme) */
+:root {
+  --ui-bg: rgb(250 250 250 / 0.6);
+  --ui-fg: #27272a;
+  --ui-strong: #09090b;
+  --ui-muted: #71717a;
+  --ui-border: rgb(0 0 0 / 0.08);
+  --ui-input: rgb(0 0 0 / 0.05);
+  --ui-hover: rgb(0 0 0 / 0.06);
+  --ui-active: rgb(0 0 0 / 0.1);
+}
+:root.dark {
+  --ui-bg: rgb(24 24 27 / 0.55);
+  --ui-fg: #e4e4e7;
+  --ui-strong: #fafafa;
+  --ui-muted: #a1a1aa;
+  --ui-border: rgb(255 255 255 / 0.1);
+  --ui-input: rgb(255 255 255 / 0.05);
+  --ui-hover: rgb(255 255 255 / 0.1);
+  --ui-active: rgb(255 255 255 / 0.15);
+}
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

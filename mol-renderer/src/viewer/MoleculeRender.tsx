@@ -8,6 +8,7 @@ import { Suspense, useEffect, useRef, useCallback, useMemo } from "react";
 import { Canvas, invalidate } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload, StatsGl } from "@react-three/drei";
 import type { MolScene } from "pdb-parser";
+import { Color } from "three";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
@@ -60,7 +61,9 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     () => (showSphereAtoms ? { materialKind, radiusScale: props.renderControls.radiusScale } : false as const),
     [showSphereAtoms, props.renderControls.radiusScale],
   );
-  const backboneOptions = useMemo(() => (showSphereBackbone ? {} : false as const), [showSphereBackbone]);
+  // Backbone lines contrast with the background
+  const lightBackground = new Color(props.background).getHSL({ h: 0, s: 0, l: 0 }).l > 0.5;
+  const backboneOptions = useMemo(() => (showSphereBackbone ? { color: lightBackground ? 0x3f3f46 : 0xffffff } : false as const), [showSphereBackbone, lightBackground]);
   const objects = useSceneObjects(filteredScene, {
     atoms: atomOptions,
     bonds: props.renderControls.showBonds,

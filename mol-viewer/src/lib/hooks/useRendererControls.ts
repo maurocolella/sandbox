@@ -1,23 +1,27 @@
 /*
  Title: useRendererControls
  Description: Leva controls for the viewer's floating windows (parsing, surface, and styling with its scene,
- spheres and selection sections), one store per window so each renders in its own panel. Everyday toggles (representation,
+ spheres and selection sections), one store per window so each renders in its own panel. The default
+ background follows the UI theme. Everyday toggles (representation,
  visibility, selection mode, surface on/off) live in the side column, not here. `reset` restores a
  window's defaults.
 */
 import { folder, useControls, useCreateStore } from "leva";
 import type { ParseOptions } from "pdb-parser";
+import type { Theme } from "./useTheme";
 
 type Store = ReturnType<typeof useCreateStore>;
 export type ControlWindow = "parsing" | "surface" | "styling";
 
 const PARSING_DEFAULTS = { altLocPolicy: "occupancy", bondPolicy: "conect+heuristic", useModelSelection: false, modelSelection: 1 };
 const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, wireframe: false, opacity: 1 };
-const STYLING_DEFAULTS = { background: "#111111", radiusScale: 0.3, hoverTint: "#ff00ff", onTopHighlight: true };
+export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
+const stylingDefaults = (theme: Theme) => ({ background: DEFAULT_BACKGROUND[theme], radiusScale: 0.3, hoverTint: "#ff00ff", onTopHighlight: true });
 
 export interface RendererControls {
   stores: Record<ControlWindow, Store>;
   reset: Record<ControlWindow, () => void>;
+  setBackground: (color: string) => void;
   parseOpts: {
     altLocPolicy: ParseOptions["altLocPolicy"];
     bondPolicy: ParseOptions["bondPolicy"];
@@ -36,7 +40,7 @@ export interface RendererControls {
   selection: { hoverTint: string; onTopHighlight: boolean };
 }
 
-export function useRendererControls(): RendererControls {
+export function useRendererControls(theme: Theme): RendererControls {
   const stores = {
     parsing: useCreateStore(),
     surface: useCreateStore(),
@@ -63,11 +67,11 @@ export function useRendererControls(): RendererControls {
   }), { store: stores.surface });
 
   const [styling, setStyling] = useControls(() => ({
-    Scene: folder({ background: { value: STYLING_DEFAULTS.background } }),
-    Spheres: folder({ radiusScale: { value: STYLING_DEFAULTS.radiusScale, min: 0.05, max: 2.0, step: 0.05 } }),
+    Scene: folder({ background: { value: stylingDefaults(theme).background } }),
+    Spheres: folder({ radiusScale: { value: stylingDefaults(theme).radiusScale, min: 0.05, max: 2.0, step: 0.05 } }),
     Selection: folder({
-      hoverTint: { value: STYLING_DEFAULTS.hoverTint },
-      onTopHighlight: { value: STYLING_DEFAULTS.onTopHighlight },
+      hoverTint: { value: stylingDefaults(theme).hoverTint },
+      onTopHighlight: { value: stylingDefaults(theme).onTopHighlight },
     }),
   }), { store: stores.styling });
 
@@ -76,8 +80,9 @@ export function useRendererControls(): RendererControls {
     reset: {
       parsing: () => setParsing(PARSING_DEFAULTS),
       surface: () => setSurface(SURFACE_DEFAULTS),
-      styling: () => setStyling(STYLING_DEFAULTS),
+      styling: () => setStyling(stylingDefaults(theme)),
     },
+    setBackground: (background: string) => setStyling({ background }),
     parseOpts: {
       altLocPolicy: parseOpts.altLocPolicy as ParseOptions["altLocPolicy"],
       bondPolicy: parseOpts.bondPolicy as ParseOptions["bondPolicy"],

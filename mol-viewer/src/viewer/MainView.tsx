@@ -2,7 +2,8 @@ import { Suspense, useCallback, useMemo, useState, useEffect, useRef, type React
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import { loadStatusText } from "../lib/loadStatusText";
-import { useRendererControls, type ControlWindow } from "../lib/hooks/useRendererControls";
+import { useRendererControls, DEFAULT_BACKGROUND, type ControlWindow } from "../lib/hooks/useRendererControls";
+import { useTheme } from "../lib/hooks/useTheme";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene } from "mol-renderer";
@@ -33,10 +34,19 @@ function pocketColor(score: number): number {
 }
 const INITIAL_SOURCE = "3J2T";
 
-// Leva drawn flat and see-through, so the window's frosting shows
+// Leva drawn flat and see-through, so the window's frosting shows; text and inputs follow the UI theme
 const LEVA_THEME = {
-  colors: { elevation1: "transparent", elevation2: "transparent", elevation3: "rgba(255,255,255,0.08)" },
-  sizes: { rootWidth: "100%" },
+  dark: {
+    colors: { elevation1: "transparent", elevation2: "transparent", elevation3: "rgba(255,255,255,0.08)" },
+    sizes: { rootWidth: "100%" },
+  },
+  light: {
+    colors: {
+      elevation1: "transparent", elevation2: "transparent", elevation3: "rgba(0,0,0,0.06)",
+      highlight1: "#71717a", highlight2: "#3f3f46", highlight3: "#09090b",
+    },
+    sizes: { rootWidth: "100%" },
+  },
 };
 
 type WindowId = "parsing" | "surface" | "styling" | "debug";
@@ -58,7 +68,14 @@ export function MainView() {
     return () => clearTimeout(t);
   }, [pending, source.url]);
 
-  const { stores, reset, parseOpts, style, spheres, selection, surface } = useRendererControls();
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface } = useRendererControls(theme);
+  // A background still at the other theme's default follows the theme; a custom one stays
+  useEffect(() => {
+    const other = theme === "dark" ? "light" : "dark";
+    if (style.background === DEFAULT_BACKGROUND[other]) setBackground(DEFAULT_BACKGROUND[theme]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
   const [representation, setRepresentation] = useState<Representation>("spheres");
   const [show, setShow] = useState({ atoms: true, bonds: true, backbone: true });
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("residue");
@@ -193,7 +210,7 @@ export function MainView() {
   // Windows open below the top bar, stacked from the left
   const levaWindow = (id: ControlWindow, title: string, index: number): ReactNode => open[id] && (
     <FloatingWindow key={id} id={id} title={title} width={300} defaultPosition={{ x: 12 + index * 24, y: 68 + index * 24 }} onClose={() => toggleWindow(id)} onReset={reset[id]}>
-      <LevaPanel store={stores[id]} fill flat titleBar={false} hideCopyButton oneLineLabels theme={LEVA_THEME} />
+      <LevaPanel store={stores[id]} fill flat titleBar={false} hideCopyButton oneLineLabels theme={LEVA_THEME[theme]} />
     </FloatingWindow>
   );
 
@@ -228,6 +245,8 @@ export function MainView() {
         title={pending?.url === source.url && !loading ? scene?.metadata?.title : undefined}
         menus={WINDOWS.map((w) => ({ ...w, open: open[w.id] }))}
         onToggleMenu={toggleWindow}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <SideColumn
@@ -256,16 +275,16 @@ export function MainView() {
       {open.debug && (
         <FloatingWindow id="debug" title="Debug" width={240} defaultPosition={{ x: 12, y: window.innerHeight - 260 }} onClose={() => toggleWindow("debug")}>
           <div ref={setStatsEl} className="mb-2 [&>div]:!relative" />
-          <div className="space-y-0.5 font-mono text-xs text-zinc-300">
+          <div className="space-y-0.5 font-mono text-xs text-(--ui-fg)">
             <div>Atoms: {atomCount.toLocaleString()}</div>
             <div>Bonds: {bondCount.toLocaleString()}</div>
             {renderStats && <div>Triangles: {renderStats.triangles.toLocaleString()}</div>}
             {renderStats && <div>Draw calls: {renderStats.drawCalls.toLocaleString()}</div>}
-            <div className="pt-1 text-zinc-400">{status ?? "Ready"}</div>
+            <div className="pt-1 text-(--ui-muted)">{status ?? "Ready"}</div>
           </div>
-          <label className="mt-2 flex items-center justify-between text-xs text-zinc-300">
+          <label className="mt-2 flex items-center justify-between text-xs text-(--ui-fg)">
             <span>Render continuously</span>
-            <input type="checkbox" className="h-3.5 w-3.5 accent-zinc-300" checked={continuousRender} onChange={(e) => setContinuousRender(e.target.checked)} />
+            <input type="checkbox" className="h-3.5 w-3.5 accent-(--ui-fg)" checked={continuousRender} onChange={(e) => setContinuousRender(e.target.checked)} />
           </label>
         </FloatingWindow>
       )}

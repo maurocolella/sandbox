@@ -19,6 +19,7 @@
     "chem-surface": "workspace:*",
     "cif-parser": "workspace:*",
     "leva": "^0.10.0",
+    "lucide-react": "^1.52.0",
     "mol-renderer": "workspace:*",
     "pdb-parser": "workspace:*",
     "react": "^19.1.1",

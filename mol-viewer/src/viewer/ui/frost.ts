@@ -1,2 +1,2 @@
 /** Frosted panel surface shared by every overlay widget. */
-export const FROST = "bg-zinc-900/55 backdrop-blur-md border border-white/10 shadow-lg shadow-black/30 text-zinc-200";
+export const FROST = "bg-(--ui-bg) backdrop-blur-md border border-(--ui-border) shadow-lg shadow-black/20 text-(--ui-fg)";
