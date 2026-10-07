@@ -35,8 +35,8 @@ interface MoleculeRenderProps {
   surfaceOpacity?: number; // 0..1, 1 = opaque
   /** Called when the triangles / draw calls of the last frame change. */
   onRenderStats?: (stats: RenderStatsInfo) => void;
-  /** Show the stats-gl panel (FPS, CPU and GPU frame time); className positions it (the panel has no styles of its own). */
-  stats?: { className?: string } | false;
+  /** Show the stats-gl panel (FPS, CPU and GPU frame time), positioned by className or placed inside parent. */
+  stats?: { className?: string; parent?: React.RefObject<HTMLElement> } | false;
   /** Render every frame instead of on demand (for measuring sustained FPS). */
   continuousRender?: boolean;
   /** Called as atoms and bonds are built (in workers) and uploaded; null once everything is drawn. */
@@ -132,7 +132,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     >
       <color attach="background" args={[props.background]} />
       <CameraLights />
-      {props.stats && <StatsGl className={props.stats.className} trackGPU minimal />}
+      {props.stats && <StatsGl className={props.stats.className} parent={props.stats.parent} clearStatsGlStyle={!!props.stats.parent} trackGPU minimal />}
       {props.onRenderStats && <RenderStats onStats={props.onRenderStats} />}
       <OrbitControls
         ref={(ctrl) => {

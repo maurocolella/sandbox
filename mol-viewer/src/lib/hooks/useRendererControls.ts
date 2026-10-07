@@ -1,192 +1,87 @@
 /*
  Title: useRendererControls
- Description: Centralizes all Leva control groups for the viewer (parsing, display, surface, styling,
- spheres, selection) and exposes a typed, convenient API for MoleculeView and others.
- Controls the renderer no longer reads (material kind, metal shading, ribbon thickness) are commented out:
- shading is fixed PBR with camera lights, and the cartoon uses PyMOL's dimensions.
+ Description: Leva controls for the viewer's floating windows (parsing, surface, styling, spheres, selection
+ highlight), one store per window so each renders in its own panel. Everyday toggles (representation,
+ visibility, selection mode, surface on/off) live in the side column, not here.
 */
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
 import type { ParseOptions } from "pdb-parser";
 
-export type Representation = "spheres" | "ribbon-tube" | "ribbon-flat";
-// export type MaterialKind = "basic" | "lambert" | "standard";
-export type SelectionMode = "none" | "atom" | "residue" | "chain";
+type Store = ReturnType<typeof useCreateStore>;
 
 export interface RendererControls {
+  stores: { parsing: Store; surface: Store; styling: Store; spheres: Store; selection: Store };
   parseOpts: {
     altLocPolicy: ParseOptions["altLocPolicy"];
     bondPolicy: ParseOptions["bondPolicy"];
     useModelSelection: boolean;
     modelSelection: number;
   };
-  display: {
-    representation: Representation;
-    atoms: boolean;
-    bonds: boolean;
-    backbone: boolean;
-    fps: boolean;
-    continuousRender: boolean;
-  };
   surface: {
-    enabled: boolean;
     kind: "vdw" | "sas" | "ses";
     probeRadius: number;
     voxelSize: number;
     wireframe: boolean;
     opacity: number;
   };
-  style: {
-    // materialKind: MaterialKind;
-    background: string;
-    // metalShading: boolean;
-  };
-  spheres: {
-    radiusScale: number;
-  };
-  // ribbon: {
-  //   thickness: number;
-  // };
-  selection: {
-    mode: SelectionMode;
-    hoverTint: string;
-    onTopHighlight: boolean;
-  };
+  style: { background: string };
+  spheres: { radiusScale: number };
+  selection: { hoverTint: string; onTopHighlight: boolean };
 }
 
 export function useRendererControls(): RendererControls {
-  const parseOpts = useControls(
-    "Parsing",
-    {
-      altLocPolicy: { value: "occupancy", options: ["occupancy", "all"] as ParseOptions["altLocPolicy"][] },
-      bondPolicy: {
-        value: "conect+heuristic",
-        options: [
-          "conect-only",
-          "heuristic-if-missing",
-          "conect+heuristic",
-        ] as ParseOptions["bondPolicy"][],
-      },
-      useModelSelection: { value: false },
-      modelSelection: {
-        value: 1,
-        min: 1,
-        step: 1,
-        render: (get) => Boolean(get("Parsing.useModelSelection")),
-      },
+  const stores = {
+    parsing: useCreateStore(),
+    surface: useCreateStore(),
+    styling: useCreateStore(),
+    spheres: useCreateStore(),
+    selection: useCreateStore(),
+  };
+
+  const parseOpts = useControls({
+    altLocPolicy: { value: "occupancy", options: ["occupancy", "all"] as ParseOptions["altLocPolicy"][] },
+    bondPolicy: {
+      value: "conect+heuristic",
+      options: ["conect-only", "heuristic-if-missing", "conect+heuristic"] as ParseOptions["bondPolicy"][],
     },
-    { collapsed: true }
-  );
+    useModelSelection: { value: false },
+    modelSelection: { value: 1, min: 1, step: 1, render: (get) => Boolean(get("useModelSelection")) },
+  }, { store: stores.parsing });
 
-  const display = useControls("Display", {
-    representation: { value: "spheres", options: ["spheres", "ribbon-tube", "ribbon-flat"] as const },
-    atoms: {
-      value: true,
-      render: (get) => get("Display.representation") === "spheres",
-    },
-    bonds: true,
-    backbone: {
-      value: true,
-      render: (get) => get("Display.representation") === "spheres",
-    },
-    fps: true,
-    // On-demand rendering makes FPS track input events; render continuously to measure sustained FPS
-    continuousRender: false,
-  });
+  const surface = useControls({
+    kind: { value: "ses", options: ["vdw", "sas", "ses"] as const },
+    probeRadius: { value: 1.4, min: 0.5, max: 3.0, step: 0.1 },
+    voxelSize: { value: 0.5, min: 0.25, max: 2.0, step: 0.05 },
+    wireframe: { value: false },
+    opacity: { value: 1, min: 0.05, max: 1, step: 0.05 },
+  }, { store: stores.surface });
 
-  const surface = useControls(
-    "Surface",
-    {
-      enabled: { value: false },
-      kind: { value: "ses", options: ["vdw", "sas", "ses"] as const },
-      probeRadius: { value: 1.4, min: 0.5, max: 3.0, step: 0.1 },
-      voxelSize: { value: 0.5, min: 0.25, max: 2.0, step: 0.05 },
-      wireframe: { value: false },
-      opacity: { value: 1, min: 0.05, max: 1, step: 0.05 },
-    },
-    { collapsed: true }
-  );
+  const style = useControls({ background: { value: "#111111" } }, { store: stores.styling });
 
-  const style = useControls(
-    "Styling",
-    {
-      // materialKind: { value: "lambert", options: ["basic", "lambert", "standard"] as const },
-      background: { value: "#111111" },
-      // metalShading: { value: false },
-    },
-    { collapsed: true }
-  );
+  const spheres = useControls({ radiusScale: { value: 0.3, min: 0.05, max: 2.0, step: 0.05 } }, { store: stores.spheres });
 
-  const spheres = useControls(
-    "Spheres",
-    {
-      radiusScale: {
-        value: 0.3,
-        min: 0.05,
-        max: 2.0,
-        step: 0.05,
-        render: (get) => get("Display.representation") === "spheres",
-      },
-    }
-  );
-
-  // const ribbon = useControls(
-  //   "Ribbon",
-  //   {
-  //     thickness: {
-  //       value: 0.18,
-  //       min: 0.02,
-  //       max: 0.6,
-  //       step: 0.01,
-  //       render: (get) => get("Display.representation") === "ribbon-flat",
-  //     },
-  //   }
-  // );
-
-  const selection = useControls("Selection", {
-    mode: { value: "residue", options: ["none", "atom", "residue", "chain"] as const },
+  const selection = useControls({
     hoverTint: { value: "#ff00ff" },
     onTopHighlight: { value: true },
-  });
+  }, { store: stores.selection });
 
-  // Normalize return types to our explicit API
   return {
+    stores,
     parseOpts: {
       altLocPolicy: parseOpts.altLocPolicy as ParseOptions["altLocPolicy"],
       bondPolicy: parseOpts.bondPolicy as ParseOptions["bondPolicy"],
       useModelSelection: Boolean(parseOpts.useModelSelection),
       modelSelection: Number(parseOpts.modelSelection),
     },
-    display: {
-      representation: display.representation as Representation,
-      atoms: Boolean(display.atoms),
-      bonds: Boolean(display.bonds),
-      backbone: Boolean(display.backbone),
-      fps: Boolean(display.fps),
-      continuousRender: Boolean(display.continuousRender),
-    },
     surface: {
-      enabled: Boolean(surface.enabled),
       kind: surface.kind as "vdw" | "sas" | "ses",
       probeRadius: Number(surface.probeRadius),
       voxelSize: Number(surface.voxelSize),
       wireframe: Boolean(surface.wireframe),
       opacity: Number(surface.opacity),
     },
-    style: {
-      // materialKind: style.materialKind as MaterialKind,
-      background: String(style.background),
-      // metalShading: Boolean(style.metalShading),
-    },
-    spheres: {
-      radiusScale: Number(spheres.radiusScale),
-    },
-    // ribbon: {
-    //   thickness: Number(ribbon.thickness),
-    // },
-    selection: {
-      mode: selection.mode as SelectionMode,
-      hoverTint: String(selection.hoverTint),
-      onTopHighlight: Boolean(selection.onTopHighlight),
-    },
+    style: { background: String(style.background) },
+    spheres: { radiusScale: Number(spheres.radiusScale) },
+    selection: { hoverTint: String(selection.hoverTint), onTopHighlight: Boolean(selection.onTopHighlight) },
   };
 }
