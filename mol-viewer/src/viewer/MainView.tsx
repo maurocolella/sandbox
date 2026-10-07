@@ -2,7 +2,7 @@ import { Suspense, useCallback, useMemo, useState, useEffect, useRef, type React
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import { loadStatusText } from "../lib/loadStatusText";
-import { useRendererControls } from "../lib/hooks/useRendererControls";
+import { useRendererControls, type ControlWindow } from "../lib/hooks/useRendererControls";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene } from "mol-renderer";
@@ -46,7 +46,7 @@ export function MainView() {
     return () => clearTimeout(t);
   }, [pending, source.url]);
 
-  const { stores, parseOpts, style, spheres, selection, surface } = useRendererControls();
+  const { stores, reset, parseOpts, style, spheres, selection, surface } = useRendererControls();
   const [representation, setRepresentation] = useState<Representation>("spheres");
   const [show, setShow] = useState({ atoms: true, bonds: true, backbone: true });
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("residue");
@@ -148,9 +148,9 @@ export function MainView() {
   const status = loading || buildStatus ? loadStatusText(loading ? loadStatus : null, buildStatus) ?? "Loading…" : null;
 
   // Windows open below the top bar, stacked from the left
-  const levaWindow = (id: WindowId, title: string, store: Parameters<typeof LevaPanel>[0]["store"], index: number): ReactNode => open[id] && (
-    <FloatingWindow key={id} id={id} title={title} width={300} defaultPosition={{ x: 12 + index * 24, y: 68 + index * 24 }} onClose={() => toggleWindow(id)}>
-      <LevaPanel store={store} fill flat titleBar={false} hideCopyButton oneLineLabels theme={LEVA_THEME} />
+  const levaWindow = (id: ControlWindow, title: string, index: number): ReactNode => open[id] && (
+    <FloatingWindow key={id} id={id} title={title} width={300} defaultPosition={{ x: 12 + index * 24, y: 68 + index * 24 }} onClose={() => toggleWindow(id)} onReset={reset[id]}>
+      <LevaPanel store={stores[id]} fill flat titleBar={false} hideCopyButton oneLineLabels theme={LEVA_THEME} />
     </FloatingWindow>
   );
 
@@ -202,11 +202,11 @@ export function MainView() {
         onSurface={setSurfaceOn}
       />
 
-      {levaWindow("parsing", "Parsing", stores.parsing, 0)}
-      {levaWindow("surface", "Surface", stores.surface, 1)}
-      {levaWindow("styling", "Styling", stores.styling, 2)}
-      {levaWindow("spheres", "Spheres", stores.spheres, 3)}
-      {levaWindow("selection", "Selection", stores.selection, 4)}
+      {levaWindow("parsing", "Parsing", 0)}
+      {levaWindow("surface", "Surface", 1)}
+      {levaWindow("styling", "Styling", 2)}
+      {levaWindow("spheres", "Spheres", 3)}
+      {levaWindow("selection", "Selection", 4)}
       {open.debug && (
         <FloatingWindow id="debug" title="Debug" width={240} defaultPosition={{ x: 12, y: window.innerHeight - 260 }} onClose={() => toggleWindow("debug")}>
           <div ref={setStatsEl} className="mb-2 [&>div]:!relative" />

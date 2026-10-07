@@ -1,7 +1,7 @@
 /*
  Title: FloatingWindow
  Description: Frosted window floating over the canvas: dragged by its title bar, brought to front on click,
- closable; its position is remembered per id.
+ closable, optionally resettable; its position is remembered per id.
 */
 import { useRef, useState, type ReactNode } from "react";
 import { usePersistentState } from "../../lib/hooks/usePersistentState";
@@ -15,10 +15,12 @@ export interface FloatingWindowProps {
   width: number;
   defaultPosition: { x: number; y: number };
   onClose: () => void;
+  /** Shows a reset button (restore defaults). */
+  onReset?: () => void;
   children: ReactNode;
 }
 
-export function FloatingWindow({ id, title, width, defaultPosition, onClose, children }: FloatingWindowProps) {
+export function FloatingWindow({ id, title, width, defaultPosition, onClose, onReset, children }: FloatingWindowProps) {
   const [pos, setPos] = usePersistentState(`mol-viewer:window:${id}`, defaultPosition);
   const [z, setZ] = useState(() => ++topZ);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -41,7 +43,18 @@ export function FloatingWindow({ id, title, width, defaultPosition, onClose, chi
         onPointerMove={(e) => { if (drag.current) setPos({ x: e.clientX - drag.current.dx, y: e.clientY - drag.current.dy }); }}
         onPointerUp={() => { drag.current = null; }}
       >
-        <span>{title}</span>
+        <span className="flex-1">{title}</span>
+        {onReset && (
+          <button
+            className="rounded px-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onReset}
+            title="Reset to defaults"
+            aria-label={`Reset ${title} to defaults`}
+          >
+            ↺
+          </button>
+        )}
         <button
           className="-mr-1 rounded px-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
           onPointerDown={(e) => e.stopPropagation()}
