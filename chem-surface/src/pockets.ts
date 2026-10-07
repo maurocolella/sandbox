@@ -1,11 +1,13 @@
 /*
- Pocket detection (LIGSITE-style buriedness on a grid), meshed with surface nets.
+ Pocket detection (LIGSITE-style buriedness on a grid); each pocket is drawn as the molecular surface of
+ the residues lining it.
  - Voxels inside an atom are protein; voxels within `margin` of an atom are too close for a ligand atom.
  - Each remaining voxel counts the 7 directions (3 axes, 4 body diagonals) along which protein lies on both
    sides within `scanDistance`; voxels enclosed in at least `minBuried` directions are pocket space.
  - Connected pocket regions of at least `minVolume` are pockets, scored 0..1 from mean buriedness and size.
+ - Lining atoms touch the pocket space; with `atomGroups` (e.g. residue per atom), whole groups line it.
 */
-import { checkAbort, surfaceNets, type Grid, type Atom, type Vec3 } from "./index.js";
+import { checkAbort, generate, type Grid, type Atom, type Vec3 } from "./index.js";
 
 export interface PocketOptions {
   voxelSize?: number; // Å, default 0.8 (coarsened to respect maxGridPoints)
@@ -15,13 +17,18 @@ export interface PocketOptions {
   minVolume?: number; // Å³ of ligand-atom-center space, default 60
   maxPockets?: number; // default 20, best scores first
   maxGridPoints?: number; // default 16M
+  /** Group (e.g. residue) of each atom: a pocket is lined by whole groups. */
+  atomGroups?: Int32Array;
   signal?: AbortSignal;
 }
 
 export interface Pocket {
+  /** Molecular surface of the lining atoms. */
   positions: Float32Array;
   normals: Float32Array;
   indices: Uint32Array;
+  /** Indices (into the input atoms) of the atoms lining the pocket. */
+  lining: Uint32Array;
   volume: number; // Å³
   buriedness: number; // mean fraction of directions enclosed, minBuried/7..1
   score: number; // 0..1: buriedness and size
@@ -141,31 +148,38 @@ export function findPockets(atoms: Atom[], opts: PocketOptions = {}): Pocket[] {
     .sort((a, b) => b.score - a.score)
     .slice(0, maxPockets);
 
-  // Mesh each pocket: its voxels, blurred, iso-surfaced on a cropped grid
-  const PAD = 3, ISO = 0.35;
-  return scored.map(({ r, id, vol, buriedness, score }) => {
+  // Lining atoms: within reach of a pocket voxel (VDW radius + margin + one voxel)
+  const outIndex = new Map(scored.map((p, k) => [p.id, k]));
+  const lining = scored.map(() => new Set<number>());
+  for (let ai = 0; ai < atoms.length; ai++) {
+    if ((ai & 4095) === 0) checkAbort(signal);
+    const a = atoms[ai]!, R = a.radius + margin + h, R2 = R * R;
+    const i0 = Math.max(0, Math.floor((a.x - R - g.ox) / h)), i1 = Math.min(nx - 1, Math.ceil((a.x + R - g.ox) / h));
+    const j0 = Math.max(0, Math.floor((a.y - R - g.oy) / h)), j1 = Math.min(ny - 1, Math.ceil((a.y + R - g.oy) / h));
+    const k0 = Math.max(0, Math.floor((a.z - R - g.oz) / h)), k1 = Math.min(nz - 1, Math.ceil((a.z + R - g.oz) / h));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
+      const l = label[i * sx + j * sy + k]!;
+      if (l < 0) continue;
+      const out = outIndex.get(l);
+      if (out === undefined) continue;
+      const dx = g.ox + i * h - a.x, dy = g.oy + j * h - a.y, dz = g.oz + k * h - a.z;
+      if (dx * dx + dy * dy + dz * dz <= R2) lining[out]!.add(ai);
+    }
+  }
+  // Whole groups (residues) line the pocket
+  const groups = opts.atomGroups;
+  if (groups) {
+    const members = new Map<number, number[]>();
+    for (let ai = 0; ai < atoms.length; ai++) { const gi = groups[ai]!; const m = members.get(gi); if (m) m.push(ai); else members.set(gi, [ai]); }
+    for (const set of lining) for (const ai of [...set]) for (const other of members.get(groups[ai]!) ?? []) set.add(other);
+  }
+
+  return scored.map(({ vol, r, buriedness, score }, k) => {
     checkAbort(signal);
-    const ci0 = r.i0 - PAD, cj0 = r.j0 - PAD, ck0 = r.k0 - PAD;
-    const cg: Grid = { ox: g.ox + ci0 * h, oy: g.oy + cj0 * h, oz: g.oz + ck0 * h, h, nx: r.i1 - r.i0 + 1 + 2 * PAD, ny: r.j1 - r.j0 + 1 + 2 * PAD, nz: r.k1 - r.k0 + 1 + 2 * PAD };
-    const n = cg.nx * cg.ny * cg.nz, csx = cg.ny * cg.nz, csy = cg.nz;
-    let occ = new Float32Array(n), tmp = new Float32Array(n);
-    for (let i = r.i0; i <= r.i1; i++) for (let j = r.j0; j <= r.j1; j++) for (let k = r.k0; k <= r.k1; k++) {
-      if (label[i * sx + j * sy + k] === id) occ[(i - ci0) * csx + (j - cj0) * csy + (k - ck0)] = 1;
-    }
-    // Separable [1 2 1] / 4 blur along each axis
-    for (const [stride, len] of [[csx, cg.nx], [csy, cg.ny], [1, cg.nz]] as const) {
-      for (let v = 0; v < n; v++) {
-        const c = Math.floor(v / stride) % len;
-        const lo = c > 0 ? occ[v - stride]! : 0, hi = c < len - 1 ? occ[v + stride]! : 0;
-        tmp[v] = (lo + 2 * occ[v]! + hi) / 4;
-      }
-      [occ, tmp] = [tmp, occ];
-    }
-    const f = occ;
-    for (let v = 0; v < n; v++) f[v] = ISO - f[v]!; // negative inside
-    const { positions, normals, indices } = surfaceNets(cg, f, signal);
+    const idx = Uint32Array.from([...lining[k]!].sort((a, b) => a - b));
+    const { positions, normals, indices } = generate("ses", Array.from(idx, (i) => atoms[i]!), { probeRadius: 1.4, voxelSize: 0.5, signal });
     return {
-      positions, normals, indices, volume: vol, buriedness, score,
+      positions, normals, indices: indices ?? new Uint32Array(0), lining: idx, volume: vol, buriedness, score,
       center: { x: g.ox + (r.cx / r.voxels) * h, y: g.oy + (r.cy / r.voxels) * h, z: g.oz + (r.cz / r.voxels) * h },
     };
   });

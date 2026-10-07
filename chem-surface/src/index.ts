@@ -386,7 +386,7 @@ function assignAtoms(atoms: Atom[], positions: Float32Array, hash: AtomHash): Ui
 export type SurfaceKind = "vdw" | "sas" | "ses";
 type Kind = SurfaceKind;
 
-function generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions): SurfaceGeometry {
+export function generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions): SurfaceGeometry {
   if (atoms.length === 0) return { positions: new Float32Array(0), normals: new Float32Array(0), indices: new Uint32Array(0), atomIndex: new Uint32Array(0) };
   const probe = opts.probeRadius ?? 1.4;
   const signal = opts.signal;
@@ -463,7 +463,7 @@ export class SurfaceWorkerClient {
     const { signal, ...options } = opts;
     return this.request((id) => ({ id, kind: "pockets", atoms, options }), signal).then((res) => {
       if (!("pockets" in res)) throw new Error("unexpected surface response");
-      return res.pockets.map((p) => ({ ...p, positions: new Float32Array(p.positions), normals: new Float32Array(p.normals), indices: new Uint32Array(p.indices) }));
+      return res.pockets.map((p) => ({ ...p, positions: new Float32Array(p.positions), normals: new Float32Array(p.normals), indices: new Uint32Array(p.indices), lining: new Uint32Array(p.lining) }));
     });
   }
 

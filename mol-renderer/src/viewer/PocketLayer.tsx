@@ -1,6 +1,7 @@
 /*
  Title: PocketLayer
- Description: Pockets as translucent volumes, one colour each. Like SurfaceLayer, each draws a depth-only
+ Description: Pocket surfaces (around the residues lining each pocket), glossy and slightly translucent,
+ one colour each. Like SurfaceLayer, each draws a depth-only
  prepass, then its colour with depthFunc LessEqual, so only its front-most layer shows (no sorting artefacts
  within a mesh); both sit in the transparent queue, after the opaque molecule.
 */
@@ -15,7 +16,7 @@ export interface PocketMesh {
   color: THREE.ColorRepresentation;
 }
 
-const OPACITY = 0.55;
+const OPACITY = 0.7;
 
 export function PocketLayer({ pockets }: { pockets: PocketMesh[] | null }) {
   const invalidate = useThree((s) => s.invalidate);
@@ -29,8 +30,9 @@ export function PocketLayer({ pockets }: { pockets: PocketMesh[] | null }) {
       const depth = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true }));
       depth.renderOrder = 10;
       const color = new THREE.Color(p.color);
-      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-        color, emissive: color, emissiveIntensity: 0.5, roughness: 0.5, metalness: 0,
+      // Plastic: smooth base with a clear coat for crisp highlights
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshPhysicalMaterial({
+        color, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08,
         transparent: true, opacity: OPACITY, depthWrite: false, depthFunc: THREE.LessEqualDepth,
       }));
       mesh.renderOrder = 11;

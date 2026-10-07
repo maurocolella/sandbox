@@ -18,8 +18,8 @@ import { FloatingWindow } from "./ui/FloatingWindow";
 
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 
-// Pocket score (0..1, buriedness and size) to colour: blue, green, then amber from 0.5 up
-const POCKET_STOPS = [[0, 0x60a5fa], [0.25, 0x34d399], [0.5, 0xfbbf24]] as const;
+// Pocket score (0..1, buriedness and size) to colour: sky, indigo, then pink from 0.5 up
+const POCKET_STOPS = [[0, 0x38bdf8], [0.25, 0x818cf8], [0.5, 0xf472b6]] as const;
 function pocketColor(score: number): number {
   const t = Math.min(Math.max(score, 0), POCKET_STOPS[POCKET_STOPS.length - 1]![0]);
   for (let i = 1; i < POCKET_STOPS.length; i++) {
@@ -145,13 +145,15 @@ export function MainView() {
     const polymer = new Uint8Array(s.tables?.residues?.length ?? 0);
     for (const seg of segments ?? []) for (let r = seg.startResidue; r <= seg.endResidue; r++) polymer[r] = 1;
     const pos = s.atoms.positions as Float32Array, rad = s.atoms.radii as Float32Array;
-    const atoms: Atom[] = [];
+    const atoms: Atom[] = [], groups: number[] = [];
     for (let i = 0; i < s.atoms.count; i++) {
       if (segments && residueIndex && !polymer[residueIndex[i]!]) continue;
       atoms.push({ x: pos[i * 3]!, y: pos[i * 3 + 1]!, z: pos[i * 3 + 2]!, radius: rad[i]! });
+      groups.push(residueIndex ? residueIndex[i]! : i);
     }
     let cancelled = false;
-    client.findPockets(atoms)
+    // Each pocket is drawn as the surface of the residues lining it
+    client.findPockets(atoms, { atomGroups: Int32Array.from(groups) })
       .then((found) => { if (!cancelled) setPockets(found.map((p) => ({ positions: p.positions, normals: p.normals, indices: p.indices, color: pocketColor(p.score) }))); })
       .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Pocket detection failed", e); });
     return () => { cancelled = true; };

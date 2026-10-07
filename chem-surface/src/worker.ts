@@ -16,6 +16,7 @@ export interface PocketMessage {
   positions: ArrayBuffer;
   normals: ArrayBuffer;
   indices: ArrayBuffer;
+  lining: ArrayBuffer;
   volume: number;
   buriedness: number;
   score: number;
@@ -43,8 +44,9 @@ async function handle(req: SurfaceRequest): Promise<void> {
         positions: p.positions.buffer as ArrayBuffer,
         normals: p.normals.buffer as ArrayBuffer,
         indices: p.indices.buffer as ArrayBuffer,
+        lining: p.lining.buffer as ArrayBuffer,
       }));
-      scope.postMessage({ id: req.id, ok: true, pockets } satisfies SurfaceResponse, pockets.flatMap((p) => [p.positions, p.normals, p.indices]));
+      scope.postMessage({ id: req.id, ok: true, pockets } satisfies SurfaceResponse, pockets.flatMap((p) => [p.positions, p.normals, p.indices, p.lining]));
       return;
     }
     let geom: SurfaceGeometry;
