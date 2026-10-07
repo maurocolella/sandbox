@@ -84,6 +84,9 @@ export function MainView() {
   const [pocketsOn, setPocketsOn] = useState(false);
   const [continuousRender, setContinuousRender] = useState(false);
   const [ligand, setLigand] = useState<LigandRef | null>(null);
+  // A click on the open ligand closes its card; a new structure closes it too
+  const toggleLigand = useCallback((l: LigandRef) => setLigand((cur) => (cur?.label === l.label ? null : l)), []);
+  useEffect(() => { setLigand(null); }, [source.url]);
   const [open, setOpen] = usePersistentState<Record<WindowId, boolean>>("mol-viewer:windows", {
     parsing: false, surface: false, styling: false, debug: true,
   });
@@ -212,7 +215,7 @@ export function MainView() {
 
   // Windows open below the top bar, stacked from the left
   const levaWindow = (id: ControlWindow, title: string, index: number): ReactNode => open[id] && (
-    <FloatingWindow key={id} id={id} title={title} width={300} defaultPosition={{ x: 12 + index * 24, y: 68 + index * 24 }} onClose={() => toggleWindow(id)} onReset={reset[id]}>
+    <FloatingWindow key={id} id={id} title={title} width={300} resizable defaultPosition={{ x: 12 + index * 24, y: 68 + index * 24 }} onClose={() => toggleWindow(id)} onReset={reset[id]}>
       <LevaPanel store={stores[id]} fill flat titleBar={false} hideCopyButton oneLineLabels theme={LEVA_THEME[theme]} />
     </FloatingWindow>
   );
@@ -232,7 +235,7 @@ export function MainView() {
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
             pockets={pockets}
-            onLigandClick={setLigand}
+            onLigandClick={toggleLigand}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
             stats={stats}
@@ -277,7 +280,7 @@ export function MainView() {
       {levaWindow("surface", "Surface", 1)}
       {levaWindow("styling", "Styling", 2)}
       {ligand && (
-        <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={360} defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
+        <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={360} resizable defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
           <LigandCard pdbId={scene?.metadata?.pdbId ?? source.pdbId} compId={ligand.compId} />
         </FloatingWindow>
       )}

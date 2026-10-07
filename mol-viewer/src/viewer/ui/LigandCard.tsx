@@ -47,7 +47,7 @@ export function LigandCard({ pdbId, compId }: { pdbId?: string; compId: string }
       ) : (
         <>
           <div className="text-(--ui-muted)">{rows.length} measurement{rows.length > 1 ? "s" : ""} ({types.join(", ")})</div>
-          <div className="max-h-64 overflow-y-auto">
+          <div>
             <table className="w-full font-mono">
               <tbody>
                 {rows.slice(0, MAX_ROWS).map((r, k) => (

@@ -2,7 +2,7 @@
  Title: LigandLayer
  Description: Ligands (non-polymer residues of two or more atoms, other than water and common
  crystallisation additives, as BioLiP excludes them) as ball-and-stick with wheat
- carbons, labelled "NAME chain seq" (clickable), in every representation. Drawn slightly larger than the regular atoms
+ carbons, labelled "NAME chain seq", in every representation; a click on its label or atoms reports it. Drawn slightly larger than the regular atoms
  and bonds so they cover them; picking and hover still go through the regular atoms.
 */
 import { useEffect, useMemo } from "react";
@@ -34,10 +34,11 @@ const LABEL_STYLE: React.CSSProperties = {
 export interface LigandRef { compId: string; chain: string; seq: number; label: string }
 interface Ligand extends LigandRef { center: THREE.Vector3 }
 
+/** Ligand atoms (grouped by ligand) and, per atom, the index of its ligand. */
 function findLigands(scene: MolScene) {
   const residues = scene.tables?.residues ?? [], chains = scene.tables?.chains ?? [];
   const ri = scene.atoms.residueIndex;
-  if (!ri) return { atoms: [] as number[], ligands: [] as Ligand[] };
+  if (!ri) return { atoms: [] as number[], ligandOf: [] as number[], ligands: [] as Ligand[] };
   const polymer = new Uint8Array(residues.length);
   for (const seg of scene.tables?.chainSegments ?? []) for (let r = seg.startResidue; r <= seg.endResidue; r++) polymer[r] = 1;
   const byResidue = new Map<number, number[]>();
@@ -48,26 +49,28 @@ function findLigands(scene: MolScene) {
     const list = byResidue.get(r);
     if (list) list.push(i); else byResidue.set(r, [i]);
   }
-  const atoms: number[] = [], ligands: Ligand[] = [];
+  const atoms: number[] = [], ligandOf: number[] = [], ligands: Ligand[] = [];
   const P = scene.atoms.positions;
   for (const [r, list] of byResidue) {
     if (list.length < 2) continue; // ions
     const center = new THREE.Vector3();
-    for (const i of list) { atoms.push(i); center.x += P[i * 3]!; center.y += P[i * 3 + 1]!; center.z += P[i * 3 + 2]!; }
+    for (const i of list) { atoms.push(i); ligandOf.push(ligands.length); center.x += P[i * 3]!; center.y += P[i * 3 + 1]!; center.z += P[i * 3 + 2]!; }
     center.divideScalar(list.length);
     const res = residues[r]!, chain = chains[res.chain ?? -1]?.id ?? "";
     ligands.push({ compId: res.name, chain, seq: res.seq, label: `${res.name} ${chain} ${res.seq}`.replace(/\s+/g, " "), center });
   }
-  return { atoms, ligands };
+  return { atoms, ligandOf, ligands };
 }
+
+const refOf = (l: Ligand): LigandRef => ({ compId: l.compId, chain: l.chain, seq: l.seq, label: l.label });
 
 export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolScene | null; radiusScale: number; onLigandClick?: (ligand: LigandRef) => void }) {
   const invalidate = useThree((s) => s.invalidate);
-  const { group, ligands } = useMemo(() => {
+  const { group, balls, ligandOf, ligands } = useMemo(() => {
     const group = new THREE.Group();
-    if (!scene) return { group, ligands: [] as Ligand[] };
-    const { atoms, ligands } = findLigands(scene);
-    if (atoms.length === 0) return { group, ligands };
+    if (!scene) return { group, balls: null, ligandOf: [] as number[], ligands: [] as Ligand[] };
+    const { atoms, ligandOf, ligands } = findLigands(scene);
+    if (atoms.length === 0) return { group, balls: null, ligandOf, ligands };
     const P = scene.atoms.positions, R = scene.atoms.radii, C = scene.atoms.colors, E = scene.atoms.element;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), color = new THREE.Color();
 
@@ -79,6 +82,7 @@ export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolS
       else color.setRGB(C[i * 3]! / 255, C[i * 3 + 1]! / 255, C[i * 3 + 2]! / 255);
       balls.setColorAt(k, color);
     });
+    balls.computeBoundingSphere(); // for click raycasts
     group.add(balls);
 
     // Sticks for bonds inside ligands; each half takes its atom's colour
@@ -106,8 +110,9 @@ export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolS
       });
       group.add(sticks);
     }
-    group.traverse((o) => { o.raycast = () => {}; });
-    return { group, ligands };
+    // Only the balls take clicks (sticks sit between them)
+    group.traverse((o) => { if (o !== balls) o.raycast = () => {}; });
+    return { group, balls, ligandOf, ligands };
   }, [scene, radiusScale]);
 
   useEffect(() => {
@@ -119,12 +124,20 @@ export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolS
 
   return (
     <>
-      <primitive object={group} />
+      <primitive
+        object={group}
+        onClick={(e: { delta: number; object: THREE.Object3D; instanceId?: number; stopPropagation: () => void }) => {
+          // Ignore the end of an orbit drag
+          if (!onLigandClick || e.object !== balls || e.instanceId === undefined || e.delta > 4) return;
+          e.stopPropagation();
+          onLigandClick(refOf(ligands[ligandOf[e.instanceId]!]!));
+        }}
+      />
       {ligands.length <= MAX_LABELS && ligands.map((l, k) => (
         <Html key={k} position={l.center} center zIndexRange={[5, 0]} style={{ pointerEvents: onLigandClick ? "auto" : "none" }}>
           <div
             style={{ ...LABEL_STYLE, cursor: onLigandClick ? "pointer" : undefined }}
-            onClick={() => onLigandClick?.({ compId: l.compId, chain: l.chain, seq: l.seq, label: l.label })}
+            onClick={() => onLigandClick?.(refOf(l))}
           >
             {l.label}
           </div>
