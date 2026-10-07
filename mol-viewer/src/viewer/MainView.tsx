@@ -7,7 +7,7 @@ import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus } from "mol-renderer";
+import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
 import SurfaceWorker from "chem-surface/worker?worker";
 import { Leva, LevaPanel } from "leva";
@@ -17,6 +17,20 @@ import { SideColumn, type Representation, type SelectionMode } from "./ui/SideCo
 import { FloatingWindow } from "./ui/FloatingWindow";
 
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
+
+// Pocket score (0..1, buriedness and size) to colour: blue, green, then amber from 0.5 up
+const POCKET_STOPS = [[0, 0x60a5fa], [0.25, 0x34d399], [0.5, 0xfbbf24]] as const;
+function pocketColor(score: number): number {
+  const t = Math.min(Math.max(score, 0), POCKET_STOPS[POCKET_STOPS.length - 1]![0]);
+  for (let i = 1; i < POCKET_STOPS.length; i++) {
+    const [t1, c1] = POCKET_STOPS[i]!, [t0, c0] = POCKET_STOPS[i - 1]!;
+    if (t > t1) continue;
+    const u = (t - t0) / (t1 - t0);
+    const mix = (shift: number) => Math.round(((c0 >> shift) & 255) * (1 - u) + ((c1 >> shift) & 255) * u);
+    return (mix(16) << 16) | (mix(8) << 8) | mix(0);
+  }
+  return POCKET_STOPS[POCKET_STOPS.length - 1]![1];
+}
 const INITIAL_SOURCE = "3J2T";
 
 // Leva drawn flat and see-through, so the window's frosting shows
@@ -51,6 +65,7 @@ export function MainView() {
   const [show, setShow] = useState({ atoms: true, bonds: true, backbone: true });
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("residue");
   const [surfaceOn, setSurfaceOn] = useState(false);
+  const [pocketsOn, setPocketsOn] = useState(false);
   const [continuousRender, setContinuousRender] = useState(false);
   const [open, setOpen] = usePersistentState<Record<WindowId, boolean>>("mol-viewer:windows", {
     parsing: false, surface: false, styling: false, spheres: false, selection: false, debug: true,
@@ -114,6 +129,34 @@ export function MainView() {
     return out;
   }, [filteredScene, surfaceOn]);
 
+  // Pockets: polymer atoms only, so ligand, water and ion sites show as pockets; own worker, so the
+  // surface and pockets don't cancel each other
+  const pocketClient = useRef<SurfaceWorkerClient | null>(null);
+  useEffect(() => {
+    const client = new SurfaceWorkerClient(() => new SurfaceWorker());
+    pocketClient.current = client;
+    return () => { client.dispose(); pocketClient.current = null; };
+  }, []);
+  const [pockets, setPockets] = useState<PocketMesh[] | null>(null);
+  useEffect(() => {
+    const client = pocketClient.current, s = filteredScene;
+    if (!pocketsOn || !s || !client) { client?.cancel(); setPockets(null); return; }
+    const residueIndex = s.atoms.residueIndex, segments = s.tables?.chainSegments;
+    const polymer = new Uint8Array(s.tables?.residues?.length ?? 0);
+    for (const seg of segments ?? []) for (let r = seg.startResidue; r <= seg.endResidue; r++) polymer[r] = 1;
+    const pos = s.atoms.positions as Float32Array, rad = s.atoms.radii as Float32Array;
+    const atoms: Atom[] = [];
+    for (let i = 0; i < s.atoms.count; i++) {
+      if (segments && residueIndex && !polymer[residueIndex[i]!]) continue;
+      atoms.push({ x: pos[i * 3]!, y: pos[i * 3 + 1]!, z: pos[i * 3 + 2]!, radius: rad[i]! });
+    }
+    let cancelled = false;
+    client.findPockets(atoms)
+      .then((found) => { if (!cancelled) setPockets(found.map((p) => ({ positions: p.positions, normals: p.normals, indices: p.indices, color: pocketColor(p.score) }))); })
+      .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Pocket detection failed", e); });
+    return () => { cancelled = true; };
+  }, [filteredScene, pocketsOn]);
+
   // The previous surface stays on screen until the new one arrives; only disabling clears it
   useEffect(() => {
     const client = surfaceClient.current;
@@ -168,6 +211,7 @@ export function MainView() {
             surfaceData={surfaceData}
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
+            pockets={pockets}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
             stats={stats}
@@ -201,6 +245,9 @@ export function MainView() {
         onShow={(key, value) => setShow((s) => ({ ...s, [key]: value }))}
         surface={surfaceOn}
         onSurface={setSurfaceOn}
+        pockets={pocketsOn}
+        onPockets={setPocketsOn}
+        pocketCount={pockets?.length}
       />
 
       {levaWindow("parsing", "Parsing", 0)}

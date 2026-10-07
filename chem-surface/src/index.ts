@@ -23,14 +23,14 @@ export interface SurfaceGeometry {
 
 const FAR = 1e4;
 
-interface Grid {
+export interface Grid {
   ox: number; oy: number; oz: number; // origin (Å)
   h: number; // spacing (Å)
   nx: number; ny: number; nz: number;
 }
 
 
-function checkAbort(signal?: AbortSignal) {
+export function checkAbort(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Surface generation aborted", "AbortError");
 }
 
@@ -302,7 +302,7 @@ const EDGES: Array<[number, number]> = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], 
  * its interpolated edge crossings; one quad per crossing grid edge, wound so the normal points outward.
  * Normals come from the analytic gradient of the trilinear field in the vertex's cell.
  */
-function surfaceNets(g: Grid, f: Float32Array, signal?: AbortSignal) {
+export function surfaceNets(g: Grid, f: Float32Array, signal?: AbortSignal) {
   const { ox, oy, oz, h, nx, ny, nz } = g;
   const cny = ny - 1, cnz = nz - 1;
   const cellVert = new Int32Array((nx - 1) * cny * cnz).fill(-1);
@@ -429,33 +429,53 @@ export async function generateSES(atoms: Atom[], opts: SurfaceOptions = {}): Pro
   return generate("ses", atoms, opts);
 }
 
-type WorkerRequest = { id: number; kind: Kind; atoms: Atom[]; options?: Omit<SurfaceOptions, "signal"> };
-type WorkerResponse =
-  | { id: number; ok: true; positions: ArrayBuffer; normals: ArrayBuffer; indices?: ArrayBuffer; atomIndex?: ArrayBuffer }
-  | { id: number; ok: false; error: string };
+export type { Pocket, PocketOptions } from "./pockets.js";
+import type { Pocket, PocketOptions } from "./pockets.js";
+import type { SurfaceRequest as WorkerRequest, SurfaceResponse as WorkerResponse } from "./worker.js";
 
 /**
- * Runs surface generation off the main thread (pair with the `chem-surface/worker` entry).
+ * Runs surface generation and pocket detection off the main thread (pair with the `chem-surface/worker` entry).
  * Only the latest request matters: starting a new one, or aborting via `signal`, terminates the busy
  * worker (generation is synchronous, so it can't be interrupted otherwise) and rejects with AbortError.
  */
 export class SurfaceWorkerClient {
   private worker: Worker | null = null;
   private nextId = 1;
-  private pending: { id: number; resolve: (g: SurfaceGeometry) => void; reject: (e: unknown) => void } | null = null;
+  private pending: { id: number; resolve: (res: WorkerResponse & { ok: true }) => void; reject: (e: unknown) => void } | null = null;
 
   constructor(private createWorker: () => Worker) {}
 
   generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
-    this.cancel();
     const { signal, ...options } = opts;
+    return this.request((id) => ({ id, kind, atoms, options }), signal).then((res) => {
+      if (!("positions" in res)) throw new Error("unexpected pocket response");
+      return {
+        positions: new Float32Array(res.positions),
+        normals: new Float32Array(res.normals),
+        indices: res.indices ? new Uint32Array(res.indices) : undefined,
+        atomIndex: res.atomIndex ? new Uint32Array(res.atomIndex) : undefined,
+      };
+    });
+  }
+
+  /** Detect pockets (see findPockets), best first. */
+  findPockets(atoms: Atom[], opts: PocketOptions = {}): Promise<Pocket[]> {
+    const { signal, ...options } = opts;
+    return this.request((id) => ({ id, kind: "pockets", atoms, options }), signal).then((res) => {
+      if (!("pockets" in res)) throw new Error("unexpected surface response");
+      return res.pockets.map((p) => ({ ...p, positions: new Float32Array(p.positions), normals: new Float32Array(p.normals), indices: new Uint32Array(p.indices) }));
+    });
+  }
+
+  private request(make: (id: number) => WorkerRequest, signal?: AbortSignal): Promise<WorkerResponse & { ok: true }> {
+    this.cancel();
     if (signal?.aborted) return Promise.reject(new DOMException("Surface generation aborted", "AbortError"));
     const worker = this.ensureWorker();
     const id = this.nextId++;
-    return new Promise<SurfaceGeometry>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       this.pending = { id, resolve, reject };
       signal?.addEventListener("abort", () => { if (this.pending?.id === id) this.cancel(); }, { once: true });
-      worker.postMessage({ id, kind, atoms, options } satisfies WorkerRequest);
+      worker.postMessage(make(id));
     });
   }
 
@@ -484,12 +504,7 @@ export class SurfaceWorkerClient {
       const { resolve, reject } = this.pending;
       this.pending = null;
       if (!res.ok) { reject(new Error(res.error)); return; }
-      resolve({
-        positions: new Float32Array(res.positions),
-        normals: new Float32Array(res.normals),
-        indices: res.indices ? new Uint32Array(res.indices) : undefined,
-        atomIndex: res.atomIndex ? new Uint32Array(res.atomIndex) : undefined,
-      });
+      resolve(res);
     };
     worker.onerror = (ev) => {
       const pending = this.pending;

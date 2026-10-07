@@ -1,12 +1,25 @@
 import { generateVDW, generateSAS, generateSES, type Atom, type SurfaceOptions, type SurfaceGeometry, type SurfaceKind } from './index.js';
+import { findPockets, type PocketOptions } from './pockets.js';
 
 export type { SurfaceKind } from './index.js';
 
-export interface SurfaceRequest {
-  id: number;
-  kind: SurfaceKind;
-  atoms: Atom[];
-  options?: Omit<SurfaceOptions, 'signal'>; // AbortSignal cannot cross the worker boundary
+export type SurfaceRequest =
+  | {
+      id: number;
+      kind: SurfaceKind;
+      atoms: Atom[];
+      options?: Omit<SurfaceOptions, 'signal'>; // AbortSignal cannot cross the worker boundary
+    }
+  | { id: number; kind: 'pockets'; atoms: Atom[]; options?: Omit<PocketOptions, 'signal'> };
+
+export interface PocketMessage {
+  positions: ArrayBuffer;
+  normals: ArrayBuffer;
+  indices: ArrayBuffer;
+  volume: number;
+  buriedness: number;
+  score: number;
+  center: { x: number; y: number; z: number };
 }
 
 export type SurfaceResponse =
@@ -18,11 +31,22 @@ export type SurfaceResponse =
       indices?: ArrayBuffer;
       atomIndex?: ArrayBuffer;
     }
+  | { id: number; ok: true; pockets: PocketMessage[] }
   | { id: number; ok: false; error: string };
 
 async function handle(req: SurfaceRequest): Promise<void> {
   const scope = self as unknown as DedicatedWorkerGlobalScope;
   try {
+    if (req.kind === 'pockets') {
+      const pockets = findPockets(req.atoms, req.options ?? {}).map((p) => ({
+        ...p,
+        positions: p.positions.buffer as ArrayBuffer,
+        normals: p.normals.buffer as ArrayBuffer,
+        indices: p.indices.buffer as ArrayBuffer,
+      }));
+      scope.postMessage({ id: req.id, ok: true, pockets } satisfies SurfaceResponse, pockets.flatMap((p) => [p.positions, p.normals, p.indices]));
+      return;
+    }
     let geom: SurfaceGeometry;
     if (req.kind === 'vdw') geom = await generateVDW(req.atoms, req.options ?? {});
     else if (req.kind === 'sas') geom = await generateSAS(req.atoms, req.options ?? {});

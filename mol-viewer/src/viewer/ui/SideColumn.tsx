@@ -26,6 +26,10 @@ export interface SideColumnProps {
   onShow: (key: "atoms" | "bonds" | "backbone", value: boolean) => void;
   surface: boolean;
   onSurface: (on: boolean) => void;
+  pockets: boolean;
+  onPockets: (on: boolean) => void;
+  /** Pockets found, once computed. */
+  pocketCount?: number;
 }
 
 const MIN_WIDTH = 200, MAX_WIDTH = 480;
@@ -149,6 +153,7 @@ export function SideColumn(props: SideColumnProps) {
             </Section>
             <Section title="Surface">
               <Toggle label="Show surface" checked={props.surface} onChange={props.onSurface} />
+              <Toggle label={props.pockets && props.pocketCount !== undefined ? `Pockets (${props.pocketCount})` : "Pockets"} checked={props.pockets} onChange={props.onPockets} />
             </Section>
           </div>
           {/* Inner edge: drag to resize */}

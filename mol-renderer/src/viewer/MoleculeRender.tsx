@@ -20,6 +20,7 @@ import { useHoverState } from "../lib/hooks/useHoverState";
 import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 import { AtomRaycast } from "./AtomRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
+import { PocketLayer, type PocketMesh } from "./PocketLayer";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
 import { InstancesLod } from "./InstancesLod";
@@ -33,6 +34,8 @@ interface MoleculeRenderProps {
   surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
+  /** Pockets drawn as translucent volumes. */
+  pockets?: PocketMesh[] | null;
   /** Called when the triangles / draw calls of the last frame change. */
   onRenderStats?: (stats: RenderStatsInfo) => void;
   /** Show the stats-gl panel (FPS, CPU and GPU frame time), positioned by className or placed inside parent. */
@@ -155,6 +158,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <Suspense fallback={null}>
         <group>
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
+          <PocketLayer pockets={props.pockets ?? null} />
           {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />
