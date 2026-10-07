@@ -22,7 +22,7 @@ import { useCameraMotion } from "../lib/hooks/useCameraMotion";
 import { AtomRaycast } from "./AtomRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { PocketLayer, type PocketMesh } from "./PocketLayer";
-import { LigandLayer } from "./LigandLayer";
+import { LigandLayer, type LigandRef } from "./LigandLayer";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
 import { InstancesLod } from "./InstancesLod";
@@ -36,6 +36,8 @@ interface MoleculeRenderProps {
   surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
+  /** Called when a ligand's label is clicked. */
+  onLigandClick?: (ligand: LigandRef) => void;
   /** Pockets drawn as translucent volumes. */
   pockets?: PocketMesh[] | null;
   /** Called when the triangles / draw calls of the last frame change. */
@@ -163,7 +165,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
         <group>
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
-          {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} />}
+          {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
           {props.renderControls.renderMode !== "spheres" && ribbonGroup && (
             <>
               <primitive key={keys.ribbon} object={ribbonGroup} />

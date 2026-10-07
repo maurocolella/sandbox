@@ -8,7 +8,7 @@ import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh } from "mol-renderer";
+import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
 import SurfaceWorker from "chem-surface/worker?worker";
 import { Leva, LevaPanel } from "leva";
@@ -16,6 +16,7 @@ import { resolveStructureSource, type StructureSource } from "../lib/structureSo
 import { TopBar } from "./ui/TopBar";
 import { SideColumn, type Representation, type SelectionMode } from "./ui/SideColumn";
 import { FloatingWindow } from "./ui/FloatingWindow";
+import { LigandCard } from "./ui/LigandCard";
 
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 
@@ -82,6 +83,7 @@ export function MainView() {
   const [surfaceOn, setSurfaceOn] = useState(false);
   const [pocketsOn, setPocketsOn] = useState(false);
   const [continuousRender, setContinuousRender] = useState(false);
+  const [ligand, setLigand] = useState<LigandRef | null>(null);
   const [open, setOpen] = usePersistentState<Record<WindowId, boolean>>("mol-viewer:windows", {
     parsing: false, surface: false, styling: false, debug: true,
   });
@@ -230,6 +232,7 @@ export function MainView() {
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
             pockets={pockets}
+            onLigandClick={setLigand}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
             stats={stats}
@@ -273,6 +276,11 @@ export function MainView() {
       {levaWindow("parsing", "Parsing", 0)}
       {levaWindow("surface", "Surface", 1)}
       {levaWindow("styling", "Styling", 2)}
+      {ligand && (
+        <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={360} defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
+          <LigandCard pdbId={scene?.metadata?.pdbId ?? source.pdbId} compId={ligand.compId} />
+        </FloatingWindow>
+      )}
       {open.debug && (
         <FloatingWindow id="debug" title="Debug" width={240} defaultPosition={{ x: 12, y: window.innerHeight - 260 }} onClose={() => toggleWindow("debug")}>
           <div ref={setStatsEl} className="mb-2 [&>div]:!relative" />

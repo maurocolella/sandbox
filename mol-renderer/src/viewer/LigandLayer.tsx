@@ -2,7 +2,7 @@
  Title: LigandLayer
  Description: Ligands (non-polymer residues of two or more atoms, other than water and common
  crystallisation additives, as BioLiP excludes them) as ball-and-stick with green
- carbons, labelled "NAME chain seq", in every representation. Drawn slightly larger than the regular atoms
+ carbons, labelled "NAME chain seq" (clickable), in every representation. Drawn slightly larger than the regular atoms
  and bonds so they cover them; picking and hover still go through the regular atoms.
 */
 import { useEffect, useMemo } from "react";
@@ -30,7 +30,8 @@ const LABEL_STYLE: React.CSSProperties = {
   border: "1px solid var(--ui-border, rgb(255 255 255 / 0.1))", backdropFilter: "blur(4px)",
 };
 
-interface Ligand { label: string; center: THREE.Vector3 }
+export interface LigandRef { compId: string; chain: string; seq: number; label: string }
+interface Ligand extends LigandRef { center: THREE.Vector3 }
 
 function findLigands(scene: MolScene) {
   const residues = scene.tables?.residues ?? [], chains = scene.tables?.chains ?? [];
@@ -53,13 +54,13 @@ function findLigands(scene: MolScene) {
     const center = new THREE.Vector3();
     for (const i of list) { atoms.push(i); center.x += P[i * 3]!; center.y += P[i * 3 + 1]!; center.z += P[i * 3 + 2]!; }
     center.divideScalar(list.length);
-    const res = residues[r]!;
-    ligands.push({ label: `${res.name} ${chains[res.chain ?? -1]?.id ?? ""} ${res.seq}`.replace(/\s+/g, " "), center });
+    const res = residues[r]!, chain = chains[res.chain ?? -1]?.id ?? "";
+    ligands.push({ compId: res.name, chain, seq: res.seq, label: `${res.name} ${chain} ${res.seq}`.replace(/\s+/g, " "), center });
   }
   return { atoms, ligands };
 }
 
-export function LigandLayer({ scene, radiusScale }: { scene: MolScene | null; radiusScale: number }) {
+export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolScene | null; radiusScale: number; onLigandClick?: (ligand: LigandRef) => void }) {
   const invalidate = useThree((s) => s.invalidate);
   const { group, ligands } = useMemo(() => {
     const group = new THREE.Group();
@@ -119,8 +120,13 @@ export function LigandLayer({ scene, radiusScale }: { scene: MolScene | null; ra
     <>
       <primitive object={group} />
       {ligands.length <= MAX_LABELS && ligands.map((l, k) => (
-        <Html key={k} position={l.center} center zIndexRange={[5, 0]} style={{ pointerEvents: "none" }}>
-          <div style={LABEL_STYLE}>{l.label}</div>
+        <Html key={k} position={l.center} center zIndexRange={[5, 0]} style={{ pointerEvents: onLigandClick ? "auto" : "none" }}>
+          <div
+            style={{ ...LABEL_STYLE, cursor: onLigandClick ? "pointer" : undefined }}
+            onClick={() => onLigandClick?.({ compId: l.compId, chain: l.chain, seq: l.seq, label: l.label })}
+          >
+            {l.label}
+          </div>
         </Html>
       ))}
     </>
