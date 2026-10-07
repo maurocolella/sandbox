@@ -13,7 +13,6 @@ export type SelectionMode = "none" | "atom" | "residue" | "chain";
 
 export interface SideColumnProps {
   objectName?: string;
-  objectTitle?: string;
   chains: { index: number; id: string }[];
   chainSelected: Record<number, boolean>;
   onToggleChain: (idx: number, visible: boolean) => void;
@@ -106,8 +105,7 @@ export function SideColumn(props: SideColumnProps) {
                     <span className="truncate font-medium">{props.objectName ?? "structure"}</span>
                     <input type="checkbox" className="h-4 w-4 accent-zinc-300" checked={allVisible} onChange={(e) => (e.target.checked ? props.onAllChains() : props.onNoChains())} />
                   </label>
-                  {props.objectTitle && <p className="mt-0.5 mb-1.5 line-clamp-3 text-xs text-zinc-400" title={props.objectTitle}>{props.objectTitle}</p>}
-                  {!props.objectTitle && <div className="mb-1.5" />}
+                  <div className="mb-1.5" />
                   <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto">
                     {props.chains.map((c) => {
                       const on = props.chainSelected[c.index] !== false;

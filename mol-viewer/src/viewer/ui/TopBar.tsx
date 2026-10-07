@@ -1,7 +1,7 @@
 /*
  Title: TopBar
- Description: Frosted bar across the top of the canvas: the structure source field and the menu toggles
- that open the floating windows.
+ Description: Frosted bar across the top of the canvas: the structure source field, the loaded entry's
+ title (ellipsised, in full on hover) and the menu toggles that open the floating windows.
 */
 import { FROST } from "./frost";
 
@@ -12,6 +12,8 @@ export interface TopBarProps {
   onSourceInputChange: (value: string) => void;
   hint?: string;
   error?: string;
+  /** Shown instead of the hint once the entry has loaded. */
+  title?: string;
   menus: TopBarMenu[];
   onToggleMenu: (id: string) => void;
 }
@@ -27,7 +29,11 @@ export function TopBar(props: TopBarProps) {
         spellCheck={false}
         className="w-64 rounded-md bg-white/5 px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:ring-1 focus:ring-white/30"
       />
-      <span className={`min-w-0 truncate text-xs ${props.error ? "text-red-400" : "text-zinc-400"}`}>{props.error ?? props.hint}</span>
+      {props.error
+        ? <span className="min-w-0 truncate text-xs text-red-400" title={props.error}>{props.error}</span>
+        : props.title
+          ? <span className="min-w-0 truncate text-sm text-zinc-200" title={props.title}>{props.title}</span>
+          : <span className="min-w-0 truncate text-xs text-zinc-400">{props.hint}</span>}
       <nav className="ml-auto flex gap-1">
         {props.menus.map((m) => (
           <button

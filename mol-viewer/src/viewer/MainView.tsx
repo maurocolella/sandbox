@@ -181,13 +181,13 @@ export function MainView() {
         onSourceInputChange={setSourceInput}
         hint={sourceHint}
         error={sourceError}
+        title={pending?.url === source.url && !loading ? scene?.metadata?.title : undefined}
         menus={WINDOWS.map((w) => ({ ...w, open: open[w.id] }))}
         onToggleMenu={toggleWindow}
       />
 
       <SideColumn
         objectName={scene?.metadata?.pdbId ?? source.pdbId}
-        objectTitle={scene?.metadata?.title}
         chains={chains}
         chainSelected={chainSelected}
         onToggleChain={handleToggleChain}
