@@ -18,7 +18,7 @@ export interface SwapState {
   fit?: { shape: number; clashes: number };
 }
 
-const SWAP_COLOR = "#c084fc";
+const SWAP_COLOR = "#14b8a6";
 const MAX_ROWS = 30;
 const isChemblId = (id: string) => /^CHEMBL\d+$/.test(id);
 const fmt = (v: number) => (Math.abs(v) >= 1000 || Math.abs(v) < 0.01 ? v.toExponential(2) : String(+v.toPrecision(3)));

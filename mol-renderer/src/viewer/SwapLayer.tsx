@@ -1,7 +1,7 @@
 /*
  Title: SwapLayer
- Description: A ligand swapped into a pocket, as ball-and-stick with violet carbons (distinct from the
- entry's own ligands, chain colours and elements), following the sphere radius scale.
+ Description: A ligand swapped into a pocket, as ball-and-stick with teal carbons (distinct from the
+ entry's own ligands, pockets, chain colours and elements), following the sphere radius scale.
 */
 import { useEffect, useMemo } from "react";
 import { useThree } from "@react-three/fiber";
@@ -15,7 +15,7 @@ export interface SwapMolecule {
   bonds: [number, number][];
 }
 
-const CARBON = new THREE.Color(0xc084fc);
+const CARBON = new THREE.Color(0x14b8a6);
 const BALL_OVER = 1.07, STICK_RADIUS = 0.12; // as the entry's ligands
 
 export function SwapLayer({ molecule, radiusScale }: { molecule: SwapMolecule | null; radiusScale: number }) {
