@@ -23,6 +23,8 @@ import { AtomRaycast } from "./AtomRaycast";
 import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { PocketLayer, type PocketMesh } from "./PocketLayer";
 import { LigandLayer, type LigandRef } from "./LigandLayer";
+import { InteractionLayer } from "./InteractionLayer";
+import type { Interaction } from "../lib/interactions";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
 import { InstancesLod } from "./InstancesLod";
@@ -36,6 +38,8 @@ interface MoleculeRenderProps {
   surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
+  /** Ligand-polymer interactions to draw. */
+  interactions?: Interaction[] | null;
   /** Called when a ligand's label is clicked. */
   onLigandClick?: (ligand: LigandRef) => void;
   /** Pockets drawn as translucent volumes. */
@@ -165,6 +169,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
         <group>
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
+          <InteractionLayer interactions={props.interactions ?? null} />
           {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
           {props.renderControls.renderMode !== "spheres" && (
             <>

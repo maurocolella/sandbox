@@ -6,7 +6,7 @@ import { useRendererControls, DEFAULT_BACKGROUND, type ControlWindow } from "../
 import { useTheme } from "../lib/hooks/useTheme";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
-import { useFilteredScene } from "mol-renderer";
+import { useFilteredScene, findInteractions } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
 import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
@@ -119,6 +119,8 @@ export function MainView() {
   }, [scene, setChainSelected]);
 
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
+  // Contacts of the ligand whose card is open
+  const interactions = useMemo(() => (ligand && filteredScene ? findInteractions(filteredScene, ligand) : null), [ligand, filteredScene]);
 
   const [surfaceData, setSurfaceData] = useState<SurfaceData | null>(null);
   const [renderStats, setRenderStats] = useState<RenderStatsInfo | null>(null);
@@ -236,6 +238,7 @@ export function MainView() {
             surfaceOpacity={surface.opacity}
             pockets={pockets}
             onLigandClick={toggleLigand}
+            interactions={interactions}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
             stats={stats}
@@ -281,7 +284,7 @@ export function MainView() {
       {levaWindow("styling", "Styling", 2)}
       {ligand && (
         <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={360} resizable defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
-          <LigandCard pdbId={scene?.metadata?.pdbId ?? source.pdbId} compId={ligand.compId} />
+          <LigandCard pdbId={scene?.metadata?.pdbId ?? source.pdbId} compId={ligand.compId} interactions={interactions ?? []} />
         </FloatingWindow>
       )}
       {open.debug && (

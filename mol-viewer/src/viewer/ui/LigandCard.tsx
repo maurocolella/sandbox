@@ -4,7 +4,33 @@
  source; fetched when shown.
 */
 import { useEffect, useState } from "react";
+import { INTERACTION_COLORS, type Interaction, type InteractionType } from "mol-renderer";
 import { ligandInfo, type Affinity, type LigandInfo } from "../../lib/ligandInfo";
+
+const INTERACTION_NAMES: Record<InteractionType, string> = {
+  metal: "Metal", salt: "Salt bridge", hbond: "H-bond", pi: "π-stacking", hydrophobic: "Hydrophobic",
+};
+
+function InteractionList({ interactions }: { interactions: Interaction[] }) {
+  if (interactions.length === 0) return <div className="text-(--ui-muted)">No contacts with the polymer.</div>;
+  return (
+    <table className="w-full font-mono">
+      <tbody>
+        {interactions.map((it, k) => (
+          <tr key={k} className="border-t border-(--ui-border)">
+            <td className="py-0.5 pr-2 whitespace-nowrap">
+              <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: INTERACTION_COLORS[it.type] }} />
+              {INTERACTION_NAMES[it.type]}{it.detail ? ` (${it.detail})` : ""}
+            </td>
+            <td className="pr-2" title={`${it.ligandAtom} → ${it.residue} ${it.residueAtom}`}>{it.residue} {it.residueAtom}</td>
+            <td className="pr-1 text-right whitespace-nowrap">{it.distance.toFixed(2)} Å</td>
+            <td className="text-right whitespace-nowrap text-(--ui-muted)">{it.angle !== undefined ? `${it.angle.toFixed(0)}°` : ""}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 const MAX_ROWS = 30;
 
@@ -12,7 +38,7 @@ const fmt = (v: number) => (Math.abs(v) >= 1000 || Math.abs(v) < 0.01 ? v.toExpo
 // Strongest first: ChEMBL by pChEMBL, then the rest in source order
 const byStrength = (a: Affinity, b: Affinity) => (b.pchembl ?? -Infinity) - (a.pchembl ?? -Infinity);
 
-export function LigandCard({ pdbId, compId }: { pdbId?: string; compId: string }) {
+export function LigandCard({ pdbId, compId, interactions }: { pdbId?: string; compId: string; interactions: Interaction[] }) {
   const [state, setState] = useState<{ info?: LigandInfo; error?: string }>({});
   useEffect(() => {
     if (!pdbId) { setState({ error: "No PDB entry ID for this structure." }); return; }
@@ -25,8 +51,14 @@ export function LigandCard({ pdbId, compId }: { pdbId?: string; compId: string }
   }, [pdbId, compId]);
 
   const { info, error } = state;
-  if (error) return <div className="text-xs text-red-400">{error}</div>;
-  if (!info) return <div className="text-xs text-(--ui-muted)">Loading…</div>;
+  const contacts = (
+    <div className="space-y-1">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-(--ui-muted)">Interactions</div>
+      <InteractionList interactions={interactions} />
+    </div>
+  );
+  if (error) return <div className="space-y-2 text-xs">{contacts}<div className="text-red-400">{error}</div></div>;
+  if (!info) return <div className="space-y-2 text-xs">{contacts}<div className="text-(--ui-muted)">Loading affinities…</div></div>;
   const rows = [...info.affinities].sort(byStrength);
   const types = [...new Set(rows.map((r) => r.type))];
 
@@ -42,6 +74,8 @@ export function LigandCard({ pdbId, compId }: { pdbId?: string; compId: string }
         </div>
         {info.chemblByConnectivity && <div className="text-(--ui-muted)">ChEMBL match ignores stereochemistry (same connectivity).</div>}
       </div>
+      {contacts}
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-(--ui-muted)">Measured affinities</div>
       {rows.length === 0 ? (
         <div className="text-(--ui-muted)">No measured affinities for this ligand on this protein.</div>
       ) : (

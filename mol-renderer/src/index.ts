@@ -6,3 +6,5 @@ export type { RenderStatsInfo } from "./viewer/RenderStats";
 export type { SceneBuildStatus } from "./lib/hooks/useSceneObjects";
 export type { PocketMesh } from "./viewer/PocketLayer";
 export type { LigandRef } from "./viewer/LigandLayer";
+export { findInteractions, type Interaction, type InteractionType } from "./lib/interactions";
+export { INTERACTION_COLORS } from "./viewer/InteractionLayer";
