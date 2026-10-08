@@ -275,7 +275,7 @@ export function MainView() {
         surface={surfaceOn}
         onSurface={setSurfaceOn}
         pockets={pocketsOn}
-        onPockets={(on) => { setPocketsOn(on); setOpen((o) => ({ ...o, surface: on })); }}
+        onPockets={setPocketsOn}
         pocketCount={pockets?.length}
       />
 
