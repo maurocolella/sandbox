@@ -6,6 +6,70 @@
 import { useEffect, useState } from "react";
 import { INTERACTION_COLORS, type Interaction, type InteractionType } from "mol-renderer";
 import { ligandInfo, type Affinity, type LigandInfo } from "../../lib/ligandInfo";
+import { knownBinders, searchCandidates, type Candidate } from "../../lib/candidates";
+
+export interface SwapState { candidate: Candidate; status: "loading" | "ready" | "error"; error?: string }
+
+const affinityText = (a: Affinity) => `${a.type} ${a.relation !== "=" ? `${a.relation} ` : ""}${fmt(a.value)} ${a.unit}`;
+
+/** This protein's known binders (or search results), each swappable into the pocket. */
+function SwapSection({ pdbId, swap, onSwap, onClearSwap }: { pdbId?: string; swap: SwapState | null; onSwap: (c: Candidate) => void; onClearSwap: () => void }) {
+  const [query, setQuery] = useState("");
+  const [list, setList] = useState<{ items?: Candidate[]; error?: string; loading?: boolean }>({ loading: true });
+  useEffect(() => {
+    let live = true;
+    setList({ loading: true });
+    const q = query.trim();
+    const t = setTimeout(() => {
+      const p = q ? searchCandidates(q) : pdbId ? knownBinders(pdbId) : Promise.resolve([]);
+      p.then((items) => { if (live) setList({ items }); }).catch((e) => { if (live) setList({ error: e instanceof Error ? e.message : String(e) }); });
+    }, q ? 400 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [pdbId, query]);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-(--ui-muted)">Swap ligand</div>
+      {swap && (
+        <div className="flex items-center gap-2 rounded bg-(--ui-input) px-2 py-1">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#c084fc" }} />
+          <span className="min-w-0 flex-1 truncate">
+            {swap.status === "loading" ? `Fetching 3D structure of ${swap.candidate.name}…` : swap.status === "error" ? <span className="text-red-400">{swap.error}</span> : `Swapped in: ${swap.candidate.name}`}
+          </span>
+          <button className="rounded px-1.5 text-(--ui-muted) hover:bg-(--ui-hover) hover:text-(--ui-strong)" onClick={onClearSwap}>Remove</button>
+        </div>
+      )}
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Name, ChEMBL ID or SMILES (empty: known binders)"
+        spellCheck={false}
+        className="w-full rounded bg-(--ui-input) px-2 py-1 text-(--ui-fg) placeholder-(--ui-muted) outline-none focus:ring-1 focus:ring-(--ui-active)"
+      />
+      {list.loading ? <div className="text-(--ui-muted)">Loading…</div>
+        : list.error ? <div className="text-red-400">{list.error}</div>
+        : !list.items?.length ? <div className="text-(--ui-muted)">{query.trim() ? "No matches." : "No known binders of this protein in ChEMBL."}</div>
+        : (
+          <div className="max-h-56 overflow-y-auto">
+            {!query.trim() && <div className="mb-1 text-(--ui-muted)">Known binders of this protein, strongest first</div>}
+            {list.items.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 border-t border-(--ui-border) py-0.5">
+                <span className="min-w-0 flex-1 truncate" title={c.smiles}>{c.name}</span>
+                {c.best && <span className="whitespace-nowrap font-mono text-(--ui-muted)" title={affinityText(c.best)}>{c.best.pchembl?.toFixed(1)}</span>}
+                <button
+                  className="rounded px-1.5 py-0.5 text-(--ui-fg) hover:bg-(--ui-hover) disabled:opacity-40"
+                  disabled={swap?.candidate.id === c.id}
+                  onClick={() => onSwap(c)}
+                >
+                  Swap in
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
 
 const INTERACTION_NAMES: Record<InteractionType, string> = {
   metal: "Metal", salt: "Salt bridge", hbond: "H-bond", pi: "π-stacking", hydrophobic: "Hydrophobic",
@@ -38,7 +102,16 @@ const fmt = (v: number) => (Math.abs(v) >= 1000 || Math.abs(v) < 0.01 ? v.toExpo
 // Strongest first: ChEMBL by pChEMBL, then the rest in source order
 const byStrength = (a: Affinity, b: Affinity) => (b.pchembl ?? -Infinity) - (a.pchembl ?? -Infinity);
 
-export function LigandCard({ pdbId, compId, interactions }: { pdbId?: string; compId: string; interactions: Interaction[] }) {
+export interface LigandCardProps {
+  pdbId?: string;
+  compId: string;
+  interactions: Interaction[];
+  swap: SwapState | null;
+  onSwap: (c: Candidate) => void;
+  onClearSwap: () => void;
+}
+
+export function LigandCard({ pdbId, compId, interactions, swap, onSwap, onClearSwap }: LigandCardProps) {
   const [state, setState] = useState<{ info?: LigandInfo; error?: string }>({});
   useEffect(() => {
     if (!pdbId) { setState({ error: "No PDB entry ID for this structure." }); return; }
@@ -55,6 +128,7 @@ export function LigandCard({ pdbId, compId, interactions }: { pdbId?: string; co
     <div className="space-y-1">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-(--ui-muted)">Interactions</div>
       <InteractionList interactions={interactions} />
+      <div className="pt-1"><SwapSection pdbId={pdbId} swap={swap} onSwap={onSwap} onClearSwap={onClearSwap} /></div>
     </div>
   );
   if (error) return <div className="space-y-2 text-xs">{contacts}<div className="text-red-400">{error}</div></div>;

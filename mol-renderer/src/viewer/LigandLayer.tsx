@@ -10,6 +10,7 @@ import { Html } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { MolScene } from "pdb-parser";
+import { buildBallAndStick, disposeGroup } from "../lib/ballAndStick";
 
 const WATER = new Set(["HOH", "WAT", "DOD", "H2O"]);
 // Buffers, cryoprotectants, precipitants and small anions from crystallisation, not biological ligands
@@ -67,59 +68,35 @@ const refOf = (l: Ligand): LigandRef => ({ compId: l.compId, chain: l.chain, seq
 export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolScene | null; radiusScale: number; onLigandClick?: (ligand: LigandRef) => void }) {
   const invalidate = useThree((s) => s.invalidate);
   const { group, balls, ligandOf, ligands } = useMemo(() => {
-    const group = new THREE.Group();
-    if (!scene) return { group, balls: null, ligandOf: [] as number[], ligands: [] as Ligand[] };
+    if (!scene) return { group: new THREE.Group(), balls: null, ligandOf: [] as number[], ligands: [] as Ligand[] };
     const { atoms, ligandOf, ligands } = findLigands(scene);
-    if (atoms.length === 0) return { group, balls: null, ligandOf, ligands };
+    if (atoms.length === 0) return { group: new THREE.Group(), balls: null, ligandOf, ligands };
     const P = scene.atoms.positions, R = scene.atoms.radii, C = scene.atoms.colors, E = scene.atoms.element;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), color = new THREE.Color();
-
-    const balls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 3), new THREE.MeshStandardMaterial({ roughness: 0.4 }), atoms.length);
-    atoms.forEach((i, k) => {
-      const r = (R?.[i] ?? 1.5) * radiusScale * BALL_OVER;
-      balls.setMatrixAt(k, m.compose(p.set(P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!), q.identity(), s.set(r, r, r)));
-      if (E?.[i] === 6 || !C) color.copy(CARBON);
-      else color.setRGB(C[i * 3]! / 255, C[i * 3 + 1]! / 255, C[i * 3 + 2]! / 255);
-      balls.setColorAt(k, color);
-    });
-    balls.computeBoundingSphere(); // for click raycasts
-    group.add(balls);
-
-    // Sticks for bonds inside ligands; each half takes its atom's colour
-    const isLigand = new Uint8Array(scene.atoms.count);
-    for (const i of atoms) isLigand[i] = 1;
-    const halves: [number, number][] = [];
+    // Ligand atoms as their own small set: positions and bonds re-indexed
+    const local = new Int32Array(scene.atoms.count).fill(-1);
+    atoms.forEach((i, k) => { local[i] = k; });
+    const positions = new Float32Array(atoms.length * 3);
+    atoms.forEach((i, k) => positions.set([P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!], k * 3));
+    const bonds: [number, number][] = [];
     const b = scene.bonds;
     for (let k = 0; b && k < b.count; k++) {
-      const a = b.indexA[k]!, c = b.indexB[k]!;
-      if (isLigand[a] && isLigand[c]) halves.push([a, c], [c, a]);
+      const x = local[b.indexA[k]!]!, y = local[b.indexB[k]!]!;
+      if (x >= 0 && y >= 0) bonds.push([x, y]);
     }
-    if (halves.length > 0) {
-      const sticks = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 12, 1, true), new THREE.MeshStandardMaterial({ roughness: 0.4 }), halves.length);
-      const up = new THREE.Vector3(0, 1, 0), from = new THREE.Vector3(), to = new THREE.Vector3(), dir = new THREE.Vector3();
-      halves.forEach(([a, c], k) => {
-        from.set(P[a * 3]!, P[a * 3 + 1]!, P[a * 3 + 2]!);
-        to.set(P[c * 3]!, P[c * 3 + 1]!, P[c * 3 + 2]!).add(from).multiplyScalar(0.5); // to the bond's middle
-        dir.subVectors(to, from);
-        const len = dir.length();
-        q.setFromUnitVectors(up, dir.normalize());
-        sticks.setMatrixAt(k, m.compose(p.addVectors(from, to).multiplyScalar(0.5), q, s.set(STICK_RADIUS, len, STICK_RADIUS)));
-        if (E?.[a] === 6 || !C) color.copy(CARBON);
-        else color.setRGB(C[a * 3]! / 255, C[a * 3 + 1]! / 255, C[a * 3 + 2]! / 255);
-        sticks.setColorAt(k, color);
-      });
-      group.add(sticks);
-    }
-    // Only the balls take clicks (sticks sit between them)
-    group.traverse((o) => { if (o !== balls) o.raycast = () => {}; });
+    const { group, balls } = buildBallAndStick({
+      positions, bonds, stickRadius: STICK_RADIUS,
+      radius: (k) => (R?.[atoms[k]!] ?? 1.5) * radiusScale * BALL_OVER,
+      color: (k, out) => {
+        const i = atoms[k]!;
+        return E?.[i] === 6 || !C ? out.copy(CARBON) : out.setRGB(C[i * 3]! / 255, C[i * 3 + 1]! / 255, C[i * 3 + 2]! / 255);
+      },
+    });
     return { group, balls, ligandOf, ligands };
   }, [scene, radiusScale]);
 
   useEffect(() => {
     invalidate();
-    return () => group.traverse((o) => {
-      if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); }
-    });
+    return () => disposeGroup(group);
   }, [group, invalidate]);
 
   return (

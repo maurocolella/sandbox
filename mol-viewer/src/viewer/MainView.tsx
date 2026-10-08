@@ -6,9 +6,9 @@ import { useRendererControls, DEFAULT_BACKGROUND, type ControlWindow } from "../
 import { useTheme } from "../lib/hooks/useTheme";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
-import { useFilteredScene, findInteractions } from "mol-renderer";
+import { useFilteredScene, findInteractions, ligandAtoms } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef } from "mol-renderer";
+import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef, SwapMolecule } from "mol-renderer";
 import { SurfaceWorkerClient, type Atom } from "chem-surface";
 import SurfaceWorker from "chem-surface/worker?worker";
 import { Leva, LevaPanel } from "leva";
@@ -16,7 +16,8 @@ import { resolveStructureSource, type StructureSource } from "../lib/structureSo
 import { TopBar } from "./ui/TopBar";
 import { SideColumn, type Representation, type SelectionMode } from "./ui/SideColumn";
 import { FloatingWindow } from "./ui/FloatingWindow";
-import { LigandCard } from "./ui/LigandCard";
+import { LigandCard, type SwapState } from "./ui/LigandCard";
+import { conformer3D, type Candidate } from "../lib/candidates";
 
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 
@@ -121,6 +122,25 @@ export function MainView() {
   const { filtered: filteredScene } = useFilteredScene(scene as MolScene | null, selectedChainIndices);
   // Contacts of the ligand whose card is open
   const interactions = useMemo(() => (ligand && filteredScene ? findInteractions(filteredScene, ligand) : null), [ligand, filteredScene]);
+
+  // A ligand swapped into the open ligand's pocket: placed with its centre on the original's (orientation as fetched)
+  const [swap, setSwap] = useState<(SwapState & { molecule?: SwapMolecule }) | null>(null);
+  useEffect(() => { setSwap(null); }, [ligand?.label, source.url]);
+  const swapIn = useCallback((candidate: Candidate) => {
+    if (!ligand || !filteredScene) return;
+    setSwap({ candidate, status: "loading" });
+    const sameRequest = (cur: typeof swap) => cur?.candidate.id === candidate.id;
+    conformer3D(candidate.smiles).then((mol) => {
+      const P = filteredScene.atoms.positions, atoms = ligandAtoms(filteredScene, ligand);
+      const target = [0, 0, 0], own = [0, 0, 0], n = mol.positions.length / 3;
+      for (const i of atoms) for (let a = 0; a < 3; a++) target[a]! += P[i * 3 + a]! / atoms.length;
+      for (let k = 0; k < n; k++) for (let a = 0; a < 3; a++) own[a]! += mol.positions[k * 3 + a]! / n;
+      const positions = mol.positions.map((v, idx) => v - own[idx % 3]! + target[idx % 3]!);
+      setSwap((cur) => (sameRequest(cur) ? { candidate, status: "ready", molecule: { elements: mol.elements, positions, bonds: mol.bonds } } : cur));
+    }).catch((e) => {
+      setSwap((cur) => (sameRequest(cur) ? { candidate, status: "error", error: e instanceof Error ? e.message : String(e) } : cur));
+    });
+  }, [ligand, filteredScene]);
 
   const [surfaceData, setSurfaceData] = useState<SurfaceData | null>(null);
   const [renderStats, setRenderStats] = useState<RenderStatsInfo | null>(null);
@@ -240,6 +260,7 @@ export function MainView() {
             onLigandClick={toggleLigand}
             interactions={interactions}
             siteLigand={ligand}
+            swapMolecule={swap?.molecule ?? null}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
             stats={stats}
@@ -285,7 +306,14 @@ export function MainView() {
       {levaWindow("styling", "Styling", 2)}
       {ligand && (
         <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={360} resizable defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
-          <LigandCard pdbId={scene?.metadata?.pdbId ?? source.pdbId} compId={ligand.compId} interactions={interactions ?? []} />
+          <LigandCard
+            pdbId={scene?.metadata?.pdbId ?? source.pdbId}
+            compId={ligand.compId}
+            interactions={interactions ?? []}
+            swap={swap}
+            onSwap={swapIn}
+            onClearSwap={() => setSwap(null)}
+          />
         </FloatingWindow>
       )}
       {open.debug && (

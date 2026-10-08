@@ -88,8 +88,11 @@ function entryData(pdbId: string): Promise<EntryData> {
   return p;
 }
 
+/** UniProt accessions of an entry's polymers. */
+export const entryUniprots = (pdbId: string) => entryData(pdbId).then((e) => e.uniprots);
+
 /** ChEMBL single-protein or complex targets with a component among the given UniProt accessions. */
-function chemblTargets(uniprots: string[]): Promise<string[]> {
+export function chemblTargets(uniprots: string[]): Promise<string[]> {
   const key = [...uniprots].sort().join(",");
   let p = targetCache.get(key);
   if (!p) {
