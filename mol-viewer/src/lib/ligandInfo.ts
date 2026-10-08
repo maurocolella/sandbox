@@ -128,6 +128,7 @@ export function ligandInfo(pdbId: string, compId: string): Promise<LigandInfo> {
         + `&standard_type__in=Ki,Kd,IC50,EC50&pchembl_value__isnull=false&limit=200&format=json`
         + `&only=standard_type,standard_relation,standard_value,standard_units,pchembl_value,assay_description,document_chembl_id`);
       for (const a of acts.activities ?? []) {
+        if (a.standard_value == null) continue; // reported without a number
         info.affinities.push({
           type: a.standard_type, relation: a.standard_relation ?? "=", value: Number(a.standard_value), unit: a.standard_units ?? "",
           pchembl: a.pchembl_value != null ? Number(a.pchembl_value) : undefined, source: "ChEMBL", assay: a.assay_description ?? undefined,
