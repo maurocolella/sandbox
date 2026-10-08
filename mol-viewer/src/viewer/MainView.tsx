@@ -71,9 +71,13 @@ export function MainView() {
     return () => clearTimeout(t);
   }, [pending, source.url]);
 
-  const { theme, toggle: toggleTheme } = useTheme();
+  const { theme, toggle: toggleThemeOnly } = useTheme();
   const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface } = useRendererControls(theme);
-  // A background still at the other theme's default follows the theme; a custom one stays
+  // A background still at the other theme's default follows the theme; a custom one stays. On a toggle
+  // this happens in the same update (one view transition); the effect covers OS theme changes.
+  const toggleTheme = () => toggleThemeOnly((next) => {
+    if (style.background === DEFAULT_BACKGROUND[next === "dark" ? "light" : "dark"]) setBackground(DEFAULT_BACKGROUND[next]);
+  });
   useEffect(() => {
     const other = theme === "dark" ? "light" : "dark";
     if (style.background === DEFAULT_BACKGROUND[other]) setBackground(DEFAULT_BACKGROUND[theme]);

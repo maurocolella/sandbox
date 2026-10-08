@@ -51,3 +51,10 @@ body {
     background-color: #ffffff;
   }
 }
+
+/* Theme toggle: whole-page crossfade (see useTheme) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 350ms;
+  animation-timing-function: ease-in-out;
+}
