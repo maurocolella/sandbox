@@ -305,7 +305,7 @@ export function MainView() {
       {levaWindow("surface", "Surface", 1)}
       {levaWindow("styling", "Styling", 2)}
       {ligand && (
-        <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={360} resizable defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
+        <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={440} resizable defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
           <LigandCard
             pdbId={scene?.metadata?.pdbId ?? source.pdbId}
             compId={ligand.compId}

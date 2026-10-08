@@ -115,6 +115,39 @@ async function chemblMolecule(inchiKey: string): Promise<{ id: string; byConnect
   return near.molecules?.[0] ? { id: near.molecules[0].molecule_chembl_id, byConnectivity: true } : null;
 }
 
+const affinityCache = new Map<string, Promise<Affinity[]>>();
+
+/** ChEMBL Ki/Kd/IC50/EC50 measurements of a molecule on the entry's protein (targets by UniProt). */
+export function moleculeAffinities(pdbId: string, chemblId: string): Promise<Affinity[]> {
+  const key = `${pdbId.toUpperCase()}/${chemblId}`;
+  let p = affinityCache.get(key);
+  if (!p) {
+    p = (async () => {
+      const targets = await chemblTargets(await entryUniprots(pdbId));
+      if (targets.length === 0) return [];
+      const acts = await getJson(`${CHEMBL}/activity?molecule_chembl_id=${chemblId}&target_chembl_id__in=${targets.join(",")}`
+        + `&standard_type__in=Ki,Kd,IC50,EC50&pchembl_value__isnull=false&limit=200&format=json`
+        + `&only=standard_type,standard_relation,standard_value,standard_units,pchembl_value,assay_description,document_chembl_id`);
+      const out: Affinity[] = [];
+      for (const a of acts.activities ?? []) {
+        if (a.standard_value == null) continue; // reported without a number
+        out.push({
+          type: a.standard_type, relation: a.standard_relation ?? "=", value: Number(a.standard_value), unit: a.standard_units ?? "",
+          pchembl: a.pchembl_value != null ? Number(a.pchembl_value) : undefined, source: "ChEMBL", assay: a.assay_description ?? undefined,
+          link: a.document_chembl_id ? `https://www.ebi.ac.uk/chembl/document_report_card/${a.document_chembl_id}/` : undefined,
+        });
+      }
+      return out;
+    })();
+    p.catch(() => affinityCache.delete(key));
+    affinityCache.set(key, p);
+  }
+  return p;
+}
+
+/** The strongest measurement with a pChEMBL (comparable across Ki, Kd, IC50, EC50), if any. */
+export const strongest = (rows: Affinity[]) => rows.reduce<Affinity | undefined>((best, r) => (r.pchembl !== undefined && (best?.pchembl === undefined || r.pchembl > best.pchembl) ? r : best), undefined);
+
 export function ligandInfo(pdbId: string, compId: string): Promise<LigandInfo> {
   const key = `${pdbId.toUpperCase()}/${compId}`;
   let p = infoCache.get(key);
@@ -124,22 +157,11 @@ export function ligandInfo(pdbId: string, compId: string): Promise<LigandInfo> {
       const comp = entry.comps.get(compId);
       const info: LigandInfo = { compId, name: comp?.name, formula: comp?.formula, weight: comp?.weight, affinities: [...(entry.rcsb.get(compId) ?? [])] };
       if (!comp?.inchiKey) return info;
-      const [mol, targets] = await Promise.all([chemblMolecule(comp.inchiKey), chemblTargets(entry.uniprots)]);
+      const mol = await chemblMolecule(comp.inchiKey);
       if (!mol) return info;
       info.chemblId = mol.id;
       info.chemblByConnectivity = mol.byConnectivity;
-      if (targets.length === 0) return info;
-      const acts = await getJson(`${CHEMBL}/activity?molecule_chembl_id=${mol.id}&target_chembl_id__in=${targets.join(",")}`
-        + `&standard_type__in=Ki,Kd,IC50,EC50&pchembl_value__isnull=false&limit=200&format=json`
-        + `&only=standard_type,standard_relation,standard_value,standard_units,pchembl_value,assay_description,document_chembl_id`);
-      for (const a of acts.activities ?? []) {
-        if (a.standard_value == null) continue; // reported without a number
-        info.affinities.push({
-          type: a.standard_type, relation: a.standard_relation ?? "=", value: Number(a.standard_value), unit: a.standard_units ?? "",
-          pchembl: a.pchembl_value != null ? Number(a.pchembl_value) : undefined, source: "ChEMBL", assay: a.assay_description ?? undefined,
-          link: a.document_chembl_id ? `https://www.ebi.ac.uk/chembl/document_report_card/${a.document_chembl_id}/` : undefined,
-        });
-      }
+      info.affinities.push(...(await moleculeAffinities(pdbId, mol.id)));
       return info;
     })();
     p.catch(() => infoCache.delete(key));
