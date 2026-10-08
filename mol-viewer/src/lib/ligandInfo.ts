@@ -74,6 +74,8 @@ function entryData(pdbId: string): Promise<EntryData> {
       }
       const rcsb: EntryData["rcsb"] = new Map();
       for (const a of e.rcsb_binding_affinity ?? []) {
+        // A zero Kd/Ki/IC50 is a value lost to rounding upstream (e.g. biotin-streptavidin, ~1e-14 M); energies may be negative
+        if (a.value <= 0 && !/&Delta;|Δ/.test(a.type)) continue;
         const list = rcsb.get(a.comp_id) ?? [];
         list.push({ type: decodeEntities(a.type), relation: a.symbol ?? "=", value: a.value, unit: a.unit, source: a.provenance_code, link: a.link });
         rcsb.set(a.comp_id, list);
