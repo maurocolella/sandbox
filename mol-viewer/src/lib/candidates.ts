@@ -3,7 +3,8 @@
  Description: Ligands to swap into a pocket, and their 3D structures:
  - Known binders of the entry's protein: ChEMBL measurements on its targets (by UniProt), best per molecule.
  - Search by ChEMBL ID, name (ChEMBL search) or SMILES.
- - 3D conformers from PubChem (by SMILES), as SDF; hydrogens dropped, like crystal ligands.
+ - 3D conformers from PubChem (by the SMILES's parent fragment, without salt counter-ions or water), as
+   SDF; hydrogens dropped, like crystal ligands.
 */
 import { entryUniprots, chemblTargets, type Affinity } from "./ligandInfo";
 
@@ -104,10 +105,15 @@ function parseSdf(text: string): Molecule3D {
   return { elements, positions: Float32Array.from(coords), bonds };
 }
 
+/** The largest fragment of a SMILES: the parent molecule of a salt or hydrate ("drug.Cl", "drug.O"). */
+const parentFragment = (smiles: string) => smiles.split(".").reduce((a, b) => (b.length > a.length ? b : a));
+
 const conformerCache = new Map<string, Promise<Molecule3D>>();
 
 /** A 3D conformer from PubChem (computed conformers exist for most drug-like molecules). */
-export function conformer3D(smiles: string): Promise<Molecule3D> {
+export function conformer3D(fullSmiles: string): Promise<Molecule3D> {
+  // PubChem has no 3D conformers for multi-component records (salts, hydrates)
+  const smiles = parentFragment(fullSmiles);
   let p = conformerCache.get(smiles);
   if (!p) {
     // Form-encoded POST: SMILES characters (/, #, +) would need care in a path
