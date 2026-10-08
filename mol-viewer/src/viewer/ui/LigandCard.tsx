@@ -29,7 +29,7 @@ function SwapSection({ pdbId, swap, onSwap, onClearSwap }: { pdbId?: string; swa
 
   return (
     <div className="space-y-1.5">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-(--ui-muted)">Swap ligand</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-(--ui-fg)">Swap ligand</div>
       {swap && (
         <div className="flex items-center gap-2 rounded bg-(--ui-input) px-2 py-1">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#c084fc" }} />
