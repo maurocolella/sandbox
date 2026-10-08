@@ -173,8 +173,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
           {props.renderControls.renderMode !== "spheres" && (
             <>
-              {/* The ribbon is the backbone here: the Backbone toggle hides it */}
-              {props.renderControls.showBackbone && ribbonGroup && <primitive key={keys.ribbon} object={ribbonGroup} />}
+              {ribbonGroup && <primitive key={keys.ribbon} object={ribbonGroup} />}
               {props.renderControls.showBonds && objects.bonds && (
                 <InstancesLod key={keys.bonds} set={objects.bonds} onDrawn={objects.bondsDrawn} />
               )}

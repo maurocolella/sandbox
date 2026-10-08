@@ -148,7 +148,7 @@ export function SideColumn(props: SideColumnProps) {
               <div className="mt-2">
                 <Toggle label="Atoms" checked={props.show.atoms} disabled={props.representation !== "spheres"} onChange={(v) => props.onShow("atoms", v)} />
                 <Toggle label="Bonds" checked={props.show.bonds} onChange={(v) => props.onShow("bonds", v)} />
-                <Toggle label="Backbone" checked={props.show.backbone} onChange={(v) => props.onShow("backbone", v)} />
+                <Toggle label="Backbone" checked={props.show.backbone} disabled={props.representation !== "spheres"} onChange={(v) => props.onShow("backbone", v)} />
                 <Toggle label="Ligands" checked={props.show.ligands} onChange={(v) => props.onShow("ligands", v)} />
               </div>
             </Section>
