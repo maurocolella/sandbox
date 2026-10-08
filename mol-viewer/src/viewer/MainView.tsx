@@ -239,6 +239,7 @@ export function MainView() {
             pockets={pockets}
             onLigandClick={toggleLigand}
             interactions={interactions}
+            siteLigand={ligand}
             onRenderStats={setRenderStats}
             onBuildStatus={setBuildStatus}
             stats={stats}

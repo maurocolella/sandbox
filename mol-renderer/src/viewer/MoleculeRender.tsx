@@ -24,6 +24,7 @@ import { SurfaceLayer, type SurfaceData } from "./SurfaceLayer";
 import { PocketLayer, type PocketMesh } from "./PocketLayer";
 import { LigandLayer, type LigandRef } from "./LigandLayer";
 import { InteractionLayer } from "./InteractionLayer";
+import { BindingSiteLayer } from "./BindingSiteLayer";
 import type { Interaction } from "../lib/interactions";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
@@ -38,6 +39,8 @@ interface MoleculeRenderProps {
   surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
+  /** Ligand whose binding site (residues within 5 Å) is shown as sticks. */
+  siteLigand?: LigandRef | null;
   /** Ligand-polymer interactions to draw. */
   interactions?: Interaction[] | null;
   /** Called when a ligand's label is clicked. */
@@ -170,6 +173,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
           <InteractionLayer interactions={props.interactions ?? null} />
+          <BindingSiteLayer scene={filteredScene} ligand={props.siteLigand ?? null} />
           {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
           {props.renderControls.renderMode !== "spheres" && (
             <>
