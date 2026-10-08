@@ -10,7 +10,13 @@ import { INTERACTION_COLORS, type Interaction, type InteractionType } from "mol-
 import { ligandInfo, moleculeAffinities, strongest, type Affinity, type LigandInfo } from "../../lib/ligandInfo";
 import { knownBinders, searchCandidates, type Candidate } from "../../lib/candidates";
 
-export interface SwapState { candidate: Candidate; status: "loading" | "ready" | "error"; error?: string }
+export interface SwapState {
+  candidate: Candidate;
+  status: "loading" | "ready" | "error";
+  error?: string;
+  /** Pose fit once aligned: shape overlap with the original (0..1) and heavy-atom clashes. */
+  fit?: { shape: number; clashes: number };
+}
 
 const SWAP_COLOR = "#c084fc";
 const MAX_ROWS = 30;
@@ -147,6 +153,13 @@ function SwapCompare({ pdbId, reference, swap, onSwap, onClearSwap }: SwapCompar
           </tbody>
         </table>
       </div>
+      {swap?.status === "ready" && swap.fit && (
+        <div className="text-(--ui-muted)">
+          <span className="text-(--ui-fg)">{swap.candidate.name}</span> aligned onto {reference.name}: shape overlap {Math.round(swap.fit.shape * 100)} %,{" "}
+          <span className={swap.fit.clashes > 0 ? "text-rose-400" : ""}>{swap.fit.clashes} clash{swap.fit.clashes === 1 ? "" : "es"}</span> (heavy atoms within 2.5 Å).
+          A pose hypothesis that assumes the original's binding mode; it doesn't change measured affinities.
+        </div>
+      )}
       {!query.trim() && !list.loading && !!list.items?.length && <div className="text-(--ui-muted)">Known binders of this protein, strongest first. pChEMBL compares Ki, Kd, IC50 and EC50 on one scale.</div>}
     </div>
   );
