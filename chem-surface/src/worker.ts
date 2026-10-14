@@ -35,7 +35,7 @@ export type SurfaceResponse =
       atomIndex?: ArrayBuffer;
     }
   | { id: number; ok: true; pockets: PocketMessage[] }
-  | { id: number; chunk: { positions: ArrayBuffer; normals: ArrayBuffer; indices: ArrayBuffer; atomIndex?: ArrayBuffer }; index?: number }
+  | { id: number; chunk: { positions: ArrayBuffer; normals: ArrayBuffer; indices: ArrayBuffer; atomIndex?: ArrayBuffer; potential?: ArrayBuffer }; index?: number }
   | { id: number; ok: true; done: true }
   | { id: number; ok: false; error: string };
 
@@ -45,8 +45,13 @@ async function handle(req: SurfaceRequest): Promise<void> {
     if ('stream' in req) {
       // One message per brick as it's done, then a final one
       generateStreaming(req.kind, req.atoms, req.options ?? {}, (c) => {
-        const chunk = { positions: c.positions.buffer as ArrayBuffer, normals: c.normals.buffer as ArrayBuffer, indices: c.indices.buffer as ArrayBuffer, atomIndex: c.atomIndex!.buffer as ArrayBuffer };
-        scope.postMessage({ id: req.id, chunk } satisfies SurfaceResponse, [chunk.positions, chunk.normals, chunk.indices, chunk.atomIndex]);
+        const chunk = {
+          positions: c.positions.buffer as ArrayBuffer, normals: c.normals.buffer as ArrayBuffer, indices: c.indices.buffer as ArrayBuffer,
+          atomIndex: c.atomIndex!.buffer as ArrayBuffer, potential: c.potential?.buffer as ArrayBuffer | undefined,
+        };
+        const transfer = [chunk.positions, chunk.normals, chunk.indices, chunk.atomIndex];
+        if (chunk.potential) transfer.push(chunk.potential);
+        scope.postMessage({ id: req.id, chunk } satisfies SurfaceResponse, transfer);
       });
       scope.postMessage({ id: req.id, ok: true, done: true } satisfies SurfaceResponse);
       return;

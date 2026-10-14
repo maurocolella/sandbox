@@ -4,7 +4,8 @@
  streams in (appended chunks are added in place). Materials live for the component's lifetime (so shader
  programs are compiled once), a new surface is compiled asynchronously and swapped in only when ready (the
  previous one stays on screen meanwhile), and the wireframe is a visibility toggle over an edge index that
- shares the mesh's position buffer. Optional per-atom colours paint the vertices nearest each atom.
+ shares the mesh's position buffer. Vertices can be coloured by electrostatic potential (red negative, white
+ neutral, blue positive), and per-atom colours paint the vertices nearest each atom over that.
  Transparency (PyMOL-style): a depth-only prepass of the surface, then the colour pass blended with
  depthFunc LessEqual, so only the front-most surface layer shows over what's behind it, free of the
  intra-mesh sorting artefacts a single transparent mesh would have. All surface passes sit in the
@@ -20,9 +21,14 @@ export interface SurfaceData {
   indices?: Uint32Array;
   /** Per vertex, the atom it belongs to (indexes `atomColors`). */
   atomIndex?: Uint32Array;
+  /** Per vertex, electrostatic potential (kcal/(mol·e)). */
+  potential?: Float32Array;
 }
 
 const BASE = new THREE.Color(0x77aaff);
+// sRGB, blended in sRGB so mid-scale values stay visible
+const NEGATIVE = new THREE.Color().setHex(0xd7301f, THREE.LinearSRGBColorSpace), NEUTRAL = new THREE.Color().setHex(0xffffff, THREE.LinearSRGBColorSpace),
+  POSITIVE = new THREE.Color().setHex(0x2b6cd6, THREE.LinearSRGBColorSpace);
 
 interface Built {
   group: THREE.Group;
@@ -56,15 +62,25 @@ function edgeIndex(indices: Uint32Array): Uint32Array {
   return out.slice(0, n);
 }
 
-/** Vertex colours: the atom's colour (linear RGB, 3 per atom), or the base colour where it has none (r < 0). */
-function paint(b: Built, atomColors: Float32Array | null) {
-  const out = b.color.array as Float32Array, ai = b.data.atomIndex;
+/**
+ * Vertex colours: the atom's colour (linear RGB, 3 per atom) where it has one (r >= 0), else the potential
+ * mapped over ±potentialRange when given, else the base colour.
+ */
+function paint(b: Built, atomColors: Float32Array | null, potentialRange: number | null) {
+  const out = b.color.array as Float32Array, ai = b.data.atomIndex, phi = potentialRange ? b.data.potential : undefined;
+  const c = new THREE.Color();
   for (let v = 0; v < out.length / 3; v++) {
     const a = ai && atomColors ? ai[v]! * 3 : -1;
-    const own = a >= 0 && atomColors![a]! >= 0;
-    out[v * 3] = own ? atomColors![a]! : BASE.r;
-    out[v * 3 + 1] = own ? atomColors![a + 1]! : BASE.g;
-    out[v * 3 + 2] = own ? atomColors![a + 2]! : BASE.b;
+    if (a >= 0 && atomColors![a]! >= 0) {
+      out[v * 3] = atomColors![a]!; out[v * 3 + 1] = atomColors![a + 1]!; out[v * 3 + 2] = atomColors![a + 2]!;
+      continue;
+    }
+    if (phi) {
+      const t = Math.max(-1, Math.min(1, phi[v]! / potentialRange!));
+      c.lerpColors(NEUTRAL, t < 0 ? NEGATIVE : POSITIVE, Math.abs(t));
+      c.setRGB(c.r, c.g, c.b, THREE.SRGBColorSpace);
+    } else c.copy(BASE);
+    out[v * 3] = c.r; out[v * 3 + 1] = c.g; out[v * 3 + 2] = c.b;
   }
   b.color.needsUpdate = true;
 }
@@ -97,7 +113,17 @@ function build(data: SurfaceData, mesh: THREE.Material, depthOnly: THREE.Materia
 
 const disposeShown = (s: Shown | null) => s?.chunks.forEach((b) => b.geometries.forEach((g) => g.dispose()));
 
-export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null }: { data: SurfaceData[] | null; wireframe: boolean; opacity?: number; atomColors?: Float32Array | null }) {
+export interface SurfaceLayerProps {
+  data: SurfaceData[] | null;
+  wireframe: boolean;
+  opacity?: number;
+  /** Linear RGB per atom (r < 0: none), painted over everything else. */
+  atomColors?: Float32Array | null;
+  /** Colour by electrostatic potential, saturating at ± this (kcal/(mol·e)); null for the uniform colour. */
+  potentialRange?: number | null;
+}
+
+export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null, potentialRange = null }: SurfaceLayerProps) {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const scene = useThree((s) => s.scene);
@@ -126,6 +152,8 @@ export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null }
   opacityRef.current = opacity;
   const atomColorsRef = useRef(atomColors);
   atomColorsRef.current = atomColors;
+  const potentialRangeRef = useRef(potentialRange);
+  potentialRangeRef.current = potentialRange;
   const allChunks = () => [...new Set([shownRef.current, latest.current])].flatMap((s) => s?.chunks ?? []);
 
   useEffect(() => {
@@ -143,7 +171,7 @@ export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null }
         const b = build(c, materials.mesh, materials.depth, materials.line);
         b.lines.visible = wireframeRef.current;
         b.depth.visible = opacityRef.current < 1;
-        paint(b, atomColorsRef.current);
+        paint(b, atomColorsRef.current, potentialRangeRef.current);
         target.group.add(b.group);
         target.chunks.push(b);
       }
@@ -177,9 +205,9 @@ export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null }
   }, [shown, wireframe, invalidate]);
 
   useEffect(() => {
-    for (const b of allChunks()) paint(b, atomColors);
+    for (const b of allChunks()) paint(b, atomColors, potentialRange);
     invalidate();
-  }, [shown, atomColors, invalidate]);
+  }, [shown, atomColors, potentialRange, invalidate]);
 
   // Opaque: single pass writing depth. Translucent: depth prepass + blended front-layer colour pass
   useEffect(() => {

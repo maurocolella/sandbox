@@ -20,12 +20,16 @@ import { SideColumn, type Representation, type SelectionMode } from "./ui/SideCo
 import { FloatingWindow } from "./ui/FloatingWindow";
 import { LigandCard, type SwapState } from "./ui/LigandCard";
 import { conformer3D, type Candidate } from "../lib/candidates";
+import { atomCharges, hydrophobicityColors } from "../lib/surfaceProperties";
 import { alignOntoLigand } from "../lib/align";
 
 const SOLVENT = new Set(["HOH", "WAT", "DOD", "H2O"]);
 
 // Pocket score (0..1, buriedness and size) to colour: sky, indigo, then pink from 0.5 up
 const POCKET_STOPS = [[0, 0x38bdf8], [0.25, 0x818cf8], [0.5, 0xf472b6]] as const;
+// kcal/(mol·e) at full red or blue, as ChimeraX's coulombic default
+const POTENTIAL_RANGE = 10;
+
 function pocketColor(score: number): number {
   const t = Math.min(Math.max(score, 0), POCKET_STOPS[POCKET_STOPS.length - 1]![0]);
   for (let i = 1; i < POCKET_STOPS.length; i++) {
@@ -166,11 +170,12 @@ export function MainView() {
     const rad = s.atoms.radii as Float32Array;
     const residues = s.tables?.residues;
     const residueIndex = s.atoms.residueIndex;
+    const charges = atomCharges(s);
     for (let i = 0; i < n; i++) {
       // Solvent is left out of surfaces, as in PyMOL
       if (residues && residueIndex && SOLVENT.has(residues[residueIndex[i]!]?.name ?? "")) continue;
       const j = i * 3;
-      out.push({ x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i] });
+      out.push(charges[i] ? { x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i], charge: charges[i] } : { x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i] });
       sceneIndex.push(i);
     }
     return { atomsInput: out, surfaceAtomScene: Int32Array.from(sceneIndex) };
@@ -233,19 +238,27 @@ export function MainView() {
 
   // With the surface on, pockets are painted on it (their lining atoms' patches) rather than drawn over it
   const surfaceShowsPockets = surfaceOn && !!surfaceData?.length && !!pockets?.length;
+  // Per surface atom: hydrophobicity when chosen, with pocket patches over it
+  const hydrophobic = surfaceOn && surface.color === "hydrophobicity";
   const surfaceAtomColors = useMemo(() => {
-    if (!surfaceShowsPockets || !pockets) return null;
-    const byScene = new Map<number, (typeof pockets)[number]>();
-    // An atom lining several pockets takes the best one's colour
-    for (const pk of pockets) for (const a of pk.lining) { const o = byScene.get(a); if (!o || pk.index < o.index) byScene.set(a, pk); }
+    if ((!surfaceShowsPockets || !pockets) && !hydrophobic) return null;
     const out = new Float32Array(surfaceAtomScene.length * 3).fill(-1);
-    const c = new Color();
-    surfaceAtomScene.forEach((a, k) => {
-      const pk = byScene.get(a);
-      if (pk) { c.set(pk.color); out[k * 3] = c.r; out[k * 3 + 1] = c.g; out[k * 3 + 2] = c.b; }
-    });
+    if (hydrophobic && filteredScene) {
+      const h = hydrophobicityColors(filteredScene);
+      surfaceAtomScene.forEach((a, k) => out.set(h.subarray(a * 3, a * 3 + 3), k * 3));
+    }
+    if (surfaceShowsPockets && pockets) {
+      const byScene = new Map<number, (typeof pockets)[number]>();
+      // An atom lining several pockets takes the best one's colour
+      for (const pk of pockets) for (const a of pk.lining) { const o = byScene.get(a); if (!o || pk.index < o.index) byScene.set(a, pk); }
+      const c = new Color();
+      surfaceAtomScene.forEach((a, k) => {
+        const pk = byScene.get(a);
+        if (pk) { c.set(pk.color); out[k * 3] = c.r; out[k * 3 + 1] = c.g; out[k * 3 + 2] = c.b; }
+      });
+    }
     return out;
-  }, [surfaceShowsPockets, pockets, surfaceAtomScene]);
+  }, [surfaceShowsPockets, pockets, hydrophobic, filteredScene, surfaceAtomScene]);
 
   const renderControls = useMemo<RenderControls>(() => ({
     renderMode: representation,
@@ -294,6 +307,7 @@ export function MainView() {
             surfaceOpacity={surface.opacity}
             pockets={surfaceShowsPockets ? null : pockets}
             surfaceAtomColors={surfaceAtomColors}
+            surfacePotentialRange={surface.color === "electrostatics" ? POTENTIAL_RANGE : null}
             onLigandClick={toggleLigand}
             interactions={interactions}
             siteLigand={ligand}

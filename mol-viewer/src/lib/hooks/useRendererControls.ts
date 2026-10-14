@@ -14,7 +14,8 @@ type Store = ReturnType<typeof useCreateStore>;
 export type ControlWindow = "parsing" | "surface" | "styling";
 
 const PARSING_DEFAULTS = { altLocPolicy: "occupancy", bondPolicy: "conect+heuristic", useModelSelection: false, modelSelection: 1 };
-const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, wireframe: false, opacity: 1 };
+const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, color: "uniform", wireframe: false, opacity: 1 };
+export type SurfaceColoring = "uniform" | "electrostatics" | "hydrophobicity";
 export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
 const stylingDefaults = (theme: Theme) => ({
   background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true,
@@ -35,6 +36,7 @@ export interface RendererControls {
     kind: "vdw" | "sas" | "ses";
     probeRadius: number;
     voxelSize: number;
+    color: SurfaceColoring;
     wireframe: boolean;
     opacity: number;
   };
@@ -67,6 +69,7 @@ export function useRendererControls(theme: Theme): RendererControls {
     kind: { value: SURFACE_DEFAULTS.kind, options: ["vdw", "sas", "ses"] },
     probeRadius: { value: SURFACE_DEFAULTS.probeRadius, min: 0.5, max: 3.0, step: 0.1 },
     voxelSize: { value: SURFACE_DEFAULTS.voxelSize, min: 0.25, max: 2.0, step: 0.05 },
+    color: { value: SURFACE_DEFAULTS.color, options: ["uniform", "electrostatics", "hydrophobicity"] as SurfaceColoring[] },
     wireframe: { value: SURFACE_DEFAULTS.wireframe },
     opacity: { value: SURFACE_DEFAULTS.opacity, min: 0.05, max: 1, step: 0.05 },
   }), { store: stores.surface });
@@ -102,6 +105,7 @@ export function useRendererControls(theme: Theme): RendererControls {
       kind: surface.kind as "vdw" | "sas" | "ses",
       probeRadius: Number(surface.probeRadius),
       voxelSize: Number(surface.voxelSize),
+      color: surface.color as SurfaceColoring,
       wireframe: Boolean(surface.wireframe),
       opacity: Number(surface.opacity),
     },

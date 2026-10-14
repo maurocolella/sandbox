@@ -38,7 +38,7 @@ What a chemist expects to see and doesn't yet.
 
 - [x] **Bond orders and aromaticity.** Double bonds, and the dashed inner line of aromatic rings. Crystal ligands' chemical definitions and PubChem's SDF both carry them; check first what our parsers keep.
 - [x] **2D ligand drawing and interaction map.** The flat structure and the LigPlot-style interaction diagram that chemists reason with, alongside the 3D view.
-- [ ] **Surface colouring by property.** Electrostatics (charge) or hydrophobicity, to see where a polar or a greasy group belongs. Builds on the per-vertex atom colouring now in place.
+- [x] **Surface colouring by property.** Electrostatics (charge) or hydrophobicity, to see where a polar or a greasy group belongs. Builds on the per-vertex atom colouring now in place.
 - [ ] **Formal charges and protonation states.** Which groups are charged at physiological pH; decides which salt bridges and H-bonds are real.
 - [ ] **Polar hydrogens.** H-bonds have a direction (donor H to acceptor); without hydrogens it can't be judged.
 - [ ] **Bridging waters.** Many key interactions run ligand to water to protein; waters are currently left out of interactions and pockets.

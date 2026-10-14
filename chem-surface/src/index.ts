@@ -1,5 +1,5 @@
 export type Vec3 = { x: number; y: number; z: number };
-export type Atom = Vec3 & { radius: number };
+export type Atom = Vec3 & { radius: number; /** Partial charge (e), for the surface's electrostatic potential. */ charge?: number };
 
 export interface SurfaceOptions {
   probeRadius?: number; // Å, default 1.4
@@ -437,6 +437,46 @@ export interface SurfaceChunk {
   indices: Uint32Array;
   /** Per vertex, the input atom nearest to it (by distance minus radius); not set for pocket meshes. */
   atomIndex?: Uint32Array;
+  /** Per vertex, Coulomb potential (kcal/(mol·e)) of the input charges, when any atom has one. */
+  potential?: Float32Array;
+}
+
+const COULOMB = 332.06; // kcal·Å/(mol·e²)
+const POTENTIAL_CUTOFF = 15; // Å; with ε = 4r the potential falls as 1/r²
+
+/** Charged atoms hashed in cells of POTENTIAL_CUTOFF, for vertex potentials. */
+function chargeGrid(atoms: Atom[]) {
+  const cells = new Map<number, number[]>();
+  const key = (i: number, j: number, k: number) => ((i + 512) * 1024 + (j + 512)) * 1024 + (k + 512);
+  atoms.forEach((a, n) => {
+    if (!a.charge) return;
+    const c = key(Math.floor(a.x / POTENTIAL_CUTOFF), Math.floor(a.y / POTENTIAL_CUTOFF), Math.floor(a.z / POTENTIAL_CUTOFF));
+    (cells.get(c) ?? cells.set(c, []).get(c)!).push(n);
+  });
+  if (cells.size === 0) return null;
+  const c2 = POTENTIAL_CUTOFF * POTENTIAL_CUTOFF;
+  /**
+   * Coulomb potential with a distance-dependent dielectric (ε = 4r, as ChimeraX's coulombic), so 332·q / (4r²);
+   * distances below 2 Å (a vertex on a charged atom's own sphere) are clamped.
+   */
+  return (positions: Float32Array) => {
+    const out = new Float32Array(positions.length / 3);
+    for (let v = 0; v < out.length; v++) {
+      const x = positions[v * 3]!, y = positions[v * 3 + 1]!, z = positions[v * 3 + 2]!;
+      const ci = Math.floor(x / POTENTIAL_CUTOFF), cj = Math.floor(y / POTENTIAL_CUTOFF), ck = Math.floor(z / POTENTIAL_CUTOFF);
+      let phi = 0;
+      for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++) for (let k = ck - 1; k <= ck + 1; k++) {
+        const list = cells.get(key(i, j, k));
+        if (!list) continue;
+        for (const n of list) {
+          const a = atoms[n]!, dx = x - a.x, dy = y - a.y, dz = z - a.z, d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < c2) phi += a.charge! / Math.max(4, d2);
+        }
+      }
+      out[v] = (COULOMB / 4) * phi;
+    }
+    return out;
+  };
 }
 
 export interface StreamOptions extends SurfaceOptions {
@@ -491,6 +531,7 @@ export function generateStreaming(kind: Kind, atoms: Atom[], opts: StreamOptions
     (bins.get(key) ?? bins.set(key, []).get(key)!).push(idx);
   });
   const reach = Math.ceil((halo * h + margin) / side);
+  const potentialOf = chargeGrid(atoms);
 
   for (let order = part.index; order < bricks.length; order += part.count) {
     const { bi, bj, bk } = bricks[order]!;
@@ -528,7 +569,7 @@ export function generateStreaming(kind: Kind, atoms: Atom[], opts: StreamOptions
     if (mesh.indices.length === 0) continue;
     const atomIndex = assignAtoms(local, mesh.positions, hash);
     for (let v = 0; v < atomIndex.length; v++) atomIndex[v] = localIndex[atomIndex[v]!]!;
-    onChunk({ ...mesh, atomIndex });
+    onChunk({ ...mesh, atomIndex, potential: potentialOf?.(mesh.positions) });
   }
 }
 
@@ -706,8 +747,11 @@ export class SurfaceStreamClient {
           const r = ev.data;
           if (r.id !== id || !live()) return;
           if ("chunk" in r) {
-            const { positions, normals, indices, atomIndex } = r.chunk;
-            onChunk?.({ positions: new Float32Array(positions), normals: new Float32Array(normals), indices: new Uint32Array(indices), atomIndex: atomIndex && new Uint32Array(atomIndex) }, r.index);
+            const { positions, normals, indices, atomIndex, potential } = r.chunk;
+            onChunk?.({
+              positions: new Float32Array(positions), normals: new Float32Array(normals), indices: new Uint32Array(indices),
+              atomIndex: atomIndex && new Uint32Array(atomIndex), potential: potential && new Float32Array(potential),
+            }, r.index);
           }
           else if (!r.ok) fail(new Error(r.error));
           else done(r);
