@@ -64,15 +64,20 @@ From an external review.
 ## 5. Later
 
 - **Auto-place by docking.** Boltz-2 through NVIDIA's hosted API, called from a Vercel function. Needs an NVIDIA API key.
+- **Structural alignment (TM-align), in the browser via WebAssembly.** Superimpose other PDB entries of the same or a related protein onto the open one, bringing their ligands along: experimentally observed poses of other binders, in our pocket's frame, to compare against swapped and docked ones.
 - **RDKit in WebAssembly.** 3D structures for molecules PubChem lacks, rotating individual bonds so flexible ligands can adapt, substructure-based alignment, and the 2D drawings and properties above.
 
-## 6. Viewer fixes
+## 6. Rendering
+
+- **Path tracing.** Publication-quality renders (soft shadows, ambient occlusion, global illumination) computed on the viewer's GPU in an offscreen buffer, so the interactive view stays responsive. While it converges, the image in progress shows as a thumbnail that refines over time; the finished render can be viewed or saved.
+
+## 7. Viewer fixes
 
 - **Selection:** "None" still behaves like Atom.
 - **Buried pockets with the surface on.** Pockets with no exposed surface don't show when painted onto it; visible with the surface off or translucent.
 - **Surface draw calls.** A streamed surface is one mesh per region (47 draw calls on 3J2T rather than 6); could be merged once streaming finishes.
 
-## 7. Performance and platform
+## 8. Performance and platform
 
 - **3J3Q's full overview at about 60 fps.** Suspected per-pixel shading cost of the farthest level of detail; measure GPU time first.
 - **Load time:** about 2 s of main-thread work on giant entries (picking grid, scene handoff).
