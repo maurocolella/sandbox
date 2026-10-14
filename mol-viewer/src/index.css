@@ -51,3 +51,9 @@ body {
     background-color: #ffffff;
   }
 }
+
+/* Native dropdown lists don't take the select's translucent background: use the theme's opaque system colours */
+select option {
+  background-color: Canvas;
+  color: CanvasText;
+}
