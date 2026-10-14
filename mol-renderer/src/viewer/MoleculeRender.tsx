@@ -5,10 +5,10 @@
  accelerated raycaster to drive hover overlays without shader patching.
 */
 import { Suspense, useEffect, useRef, useCallback, useMemo } from "react";
-import { Canvas, invalidate } from "@react-three/fiber";
+import { Canvas, invalidate, useThree } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload, StatsGl } from "@react-three/drei";
 import type { MolScene } from "pdb-parser";
-import { Color } from "three";
+import { Color, type Camera } from "three";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
@@ -37,7 +37,9 @@ interface MoleculeRenderProps {
   overlayControls: OverlayControls;
   scene: MolScene | null;
   visibleChains: number[];
-  surfaceData?: SurfaceData | null; // kept on screen until a replacement is ready
+  surfaceData?: SurfaceData[] | null; // chunks; kept on screen until a replacement's first chunk is ready
+  /** Set to the scene camera (e.g. to stream surfaces nearest the viewer first). */
+  cameraRef?: React.MutableRefObject<Camera | null>;
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
   /** A ligand swapped into a pocket, already placed. */
@@ -155,6 +157,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     >
       <color attach="background" args={[props.background]} />
       <CameraLights />
+      {props.cameraRef && <ExposeCamera target={props.cameraRef} />}
       {props.stats && <StatsGl className={props.stats.className} parent={props.stats.parent} clearStatsGlStyle={!!props.stats.parent} trackGPU minimal />}
       {props.onRenderStats && <RenderStats onStats={props.onRenderStats} />}
       <OrbitControls
@@ -224,4 +227,10 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       </Suspense>
     </Canvas>
   );
+}
+
+function ExposeCamera({ target }: { target: React.MutableRefObject<Camera | null> }) {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => { target.current = camera; return () => { target.current = null; }; }, [camera, target]);
+  return null;
 }

@@ -9,7 +9,8 @@ import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene, findInteractions } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
 import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef, SwapMolecule } from "mol-renderer";
-import { SurfaceWorkerClient, type Atom } from "chem-surface";
+import { SurfaceWorkerClient, SurfaceStreamClient, type Atom } from "chem-surface";
+import type { Camera } from "three";
 import SurfaceWorker from "chem-surface/worker?worker";
 import { Leva, LevaPanel } from "leva";
 import { resolveStructureSource, type StructureSource } from "../lib/structureSource";
@@ -143,12 +144,13 @@ export function MainView() {
     });
   }, [ligand, filteredScene]);
 
-  const [surfaceData, setSurfaceData] = useState<SurfaceData | null>(null);
+  const [surfaceData, setSurfaceData] = useState<SurfaceData[] | null>(null);
   const [renderStats, setRenderStats] = useState<RenderStatsInfo | null>(null);
-  // Surfaces are generated in a worker; a new request supersedes (terminates) the one in flight
-  const surfaceClient = useRef<SurfaceWorkerClient | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
+  // Surfaces stream in from a pool of workers; a new request supersedes (terminates) the one in flight
+  const surfaceClient = useRef<SurfaceStreamClient | null>(null);
   useEffect(() => {
-    const client = new SurfaceWorkerClient(() => new SurfaceWorker());
+    const client = new SurfaceStreamClient(() => new SurfaceWorker());
     surfaceClient.current = client;
     return () => { client.dispose(); surfaceClient.current = null; };
   }, []);
@@ -202,13 +204,16 @@ export function MainView() {
     return () => { cancelled = true; };
   }, [filteredScene, pocketsOn]);
 
-  // The previous surface stays on screen until the new one arrives; only disabling clears it
+  // The previous surface stays on screen until the new one's first chunk arrives; only disabling clears it
   useEffect(() => {
     const client = surfaceClient.current;
     if (!surfaceOn || atomsInput.length === 0 || !client) { client?.cancel(); setSurfaceData(null); return; }
-    let cancelled = false;
-    client.generate(surface.kind, atomsInput, { probeRadius: surface.probeRadius, voxelSize: surface.voxelSize })
-      .then((geom) => { if (!cancelled) setSurfaceData(geom); })
+    let cancelled = false, first = true;
+    const p = cameraRef.current?.position;
+    client.generate(surface.kind, atomsInput, { probeRadius: surface.probeRadius, voxelSize: surface.voxelSize, viewPoint: p && { x: p.x, y: p.y, z: p.z } }, (chunk) => {
+      if (cancelled) return;
+      if (first) { first = false; setSurfaceData([chunk]); } else setSurfaceData((prev) => [...(prev ?? []), chunk]);
+    })
       .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Surface generation failed", e); });
     return () => { cancelled = true; };
   }, [atomsInput, surfaceOn, surface.kind, surface.probeRadius, surface.voxelSize]);
@@ -255,6 +260,7 @@ export function MainView() {
             overlayControls={overlayControls}
             visibleChains={selectedChainIndices}
             surfaceData={surfaceData}
+            cameraRef={cameraRef}
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
             pockets={pockets}

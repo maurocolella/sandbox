@@ -1,9 +1,10 @@
 /*
  Title: SurfaceLayer
- Description: Renders a molecular surface from raw typed arrays. Materials live for the component's lifetime
- (so shader programs are compiled once), a new surface is compiled asynchronously and swapped in only when
- ready (the previous one stays on screen meanwhile), and the wireframe is a visibility toggle over an edge
- index that shares the mesh's position buffer.
+ Description: Renders a molecular surface from raw typed arrays, as a list of chunks that may grow while it
+ streams in (appended chunks are added in place). Materials live for the component's lifetime (so shader
+ programs are compiled once), a new surface is compiled asynchronously and swapped in only when ready (the
+ previous one stays on screen meanwhile), and the wireframe is a visibility toggle over an edge index that
+ shares the mesh's position buffer.
  Transparency (PyMOL-style): a depth-only prepass of the surface, then the colour pass blended with
  depthFunc LessEqual, so only the front-most surface layer shows over what's behind it, free of the
  intra-mesh sorting artefacts a single transparent mesh would have. All surface passes sit in the
@@ -24,6 +25,13 @@ interface Built {
   depth: THREE.Mesh;
   lines: THREE.LineSegments;
   geometries: THREE.BufferGeometry[];
+}
+
+/** One surface: its chunks so far. */
+interface Shown {
+  first: SurfaceData; // identifies the surface across appends
+  group: THREE.Group;
+  chunks: Built[];
 }
 
 /**
@@ -66,9 +74,9 @@ function build(data: SurfaceData, mesh: THREE.Material, depthOnly: THREE.Materia
   return { group, depth, lines, geometries: [g, lg] };
 }
 
-const disposeBuilt = (b: Built | null) => b?.geometries.forEach((g) => g.dispose());
+const disposeShown = (s: Shown | null) => s?.chunks.forEach((b) => b.geometries.forEach((g) => g.dispose()));
 
-export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceData | null; wireframe: boolean; opacity?: number }) {
+export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceData[] | null; wireframe: boolean; opacity?: number }) {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const scene = useThree((s) => s.scene);
@@ -86,38 +94,62 @@ export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceDa
   }, []);
   useEffect(() => () => { materials.mesh.dispose(); materials.depth.dispose(); materials.line.dispose(); }, [materials]);
 
-  const [shown, setShown] = useState<Built | null>(null);
-  const shownRef = useRef<Built | null>(null);
+  const [shown, setShown] = useState<Shown | null>(null);
+  const shownRef = useRef<Shown | null>(null);
   shownRef.current = shown;
+  // The newest surface, shown or still compiling
+  const latest = useRef<Shown | null>(null);
   const wireframeRef = useRef(wireframe);
   wireframeRef.current = wireframe;
+  const opacityRef = useRef(opacity);
+  opacityRef.current = opacity;
+  const allChunks = () => [...new Set([shownRef.current, latest.current])].flatMap((s) => s?.chunks ?? []);
 
   useEffect(() => {
-    if (!data || data.positions.length === 0) {
-      disposeBuilt(shownRef.current);
+    const chunks = data?.filter((c) => c.positions.length > 0) ?? [];
+    if (chunks.length === 0) {
+      if (latest.current !== shownRef.current) disposeShown(latest.current);
+      latest.current = null;
+      disposeShown(shownRef.current);
       setShown(null);
       invalidate();
       return;
     }
-    let current = true;
-    const next = build(data, materials.mesh, materials.depth, materials.line);
-    next.lines.visible = wireframeRef.current;
+    const add = (target: Shown, from: number) => {
+      for (const c of chunks.slice(from)) {
+        const b = build(c, materials.mesh, materials.depth, materials.line);
+        b.lines.visible = wireframeRef.current;
+        b.depth.visible = opacityRef.current < 1;
+        target.group.add(b.group);
+        target.chunks.push(b);
+      }
+    };
+    // More chunks of the same surface: its programs are compiled already
+    if (latest.current?.first === chunks[0]) {
+      add(latest.current, latest.current.chunks.length);
+      invalidate();
+      return;
+    }
+    if (latest.current !== shownRef.current) disposeShown(latest.current);
+    const next: Shown = { first: chunks[0]!, group: new THREE.Group(), chunks: [] };
+    latest.current = next;
+    add(next, 0);
     // Compile off the critical path (parallel where the driver supports it), then swap
     gl.compileAsync(next.group, camera, scene)
       .catch(() => undefined)
       .then(() => {
-        if (!current) { disposeBuilt(next); return; }
+        if (latest.current !== next) return;
         const previous = shownRef.current;
         setShown(next);
         // Free the old buffers only after the new surface has been committed
-        requestAnimationFrame(() => disposeBuilt(previous));
+        requestAnimationFrame(() => disposeShown(previous));
         invalidate();
       });
-    return () => { current = false; };
   }, [data, gl, camera, scene, materials, invalidate]);
 
   useEffect(() => {
-    if (shown) { shown.lines.visible = wireframe; invalidate(); }
+    for (const b of allChunks()) b.lines.visible = wireframe;
+    invalidate();
   }, [shown, wireframe, invalidate]);
 
   // Opaque: single pass writing depth. Translucent: depth prepass + blended front-layer colour pass
@@ -125,11 +157,14 @@ export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceDa
     const translucent = opacity < 1;
     materials.mesh.opacity = Math.max(0, Math.min(1, opacity));
     materials.mesh.depthWrite = !translucent;
-    if (shown) shown.depth.visible = translucent;
+    for (const b of allChunks()) b.depth.visible = translucent;
     invalidate();
   }, [shown, opacity, materials, invalidate]);
 
-  useEffect(() => () => disposeBuilt(shownRef.current), []);
+  useEffect(() => () => {
+    if (latest.current !== shownRef.current) disposeShown(latest.current);
+    disposeShown(shownRef.current);
+  }, []);
 
   return shown ? <primitive object={shown.group} /> : null;
 }

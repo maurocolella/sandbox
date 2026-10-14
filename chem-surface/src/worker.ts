@@ -1,4 +1,4 @@
-import { generateVDW, generateSAS, generateSES, type Atom, type SurfaceOptions, type SurfaceGeometry, type SurfaceKind } from './index.js';
+import { generateVDW, generateSAS, generateSES, generateStreaming, type Atom, type SurfaceOptions, type SurfaceGeometry, type SurfaceKind, type StreamOptions } from './index.js';
 import { findPockets, type PocketOptions } from './pockets.js';
 
 export type { SurfaceKind } from './index.js';
@@ -10,7 +10,8 @@ export type SurfaceRequest =
       atoms: Atom[];
       options?: Omit<SurfaceOptions, 'signal'>; // AbortSignal cannot cross the worker boundary
     }
-  | { id: number; kind: 'pockets'; atoms: Atom[]; options?: Omit<PocketOptions, 'signal'> };
+  | { id: number; kind: 'pockets'; atoms: Atom[]; options?: Omit<PocketOptions, 'signal'> }
+  | { id: number; kind: SurfaceKind; stream: true; atoms: Atom[]; options?: Omit<StreamOptions, 'signal'> };
 
 export interface PocketMessage {
   positions: ArrayBuffer;
@@ -33,11 +34,22 @@ export type SurfaceResponse =
       atomIndex?: ArrayBuffer;
     }
   | { id: number; ok: true; pockets: PocketMessage[] }
+  | { id: number; chunk: { positions: ArrayBuffer; normals: ArrayBuffer; indices: ArrayBuffer } }
+  | { id: number; ok: true; done: true }
   | { id: number; ok: false; error: string };
 
 async function handle(req: SurfaceRequest): Promise<void> {
   const scope = self as unknown as DedicatedWorkerGlobalScope;
   try {
+    if ('stream' in req) {
+      // One message per brick as it's done, then a final one
+      generateStreaming(req.kind, req.atoms, req.options ?? {}, (c) => {
+        const chunk = { positions: c.positions.buffer as ArrayBuffer, normals: c.normals.buffer as ArrayBuffer, indices: c.indices.buffer as ArrayBuffer };
+        scope.postMessage({ id: req.id, chunk } satisfies SurfaceResponse, [chunk.positions, chunk.normals, chunk.indices]);
+      });
+      scope.postMessage({ id: req.id, ok: true, done: true } satisfies SurfaceResponse);
+      return;
+    }
     if (req.kind === 'pockets') {
       const pockets = findPockets(req.atoms, req.options ?? {}).map((p) => ({
         ...p,

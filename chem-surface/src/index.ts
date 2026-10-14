@@ -151,10 +151,14 @@ function creaseSeeds(atoms: Atom[], probe: number, spacing: number, out: number[
       }
     }
   });
-  for (let i = 0; i < atoms.length; i++) {
-    const a = atoms[i]!, Ri = a.radius + probe;
-    for (const j of nbrs[i]!) {
-      if (j < i) continue;
+  // Each pair is sampled once, oriented by coordinates rather than list order, so the samples don't
+  // depend on how the atoms are ordered (bricks gather them in a different order)
+  const before = (p: Atom, q: Atom) => p.x < q.x || (p.x === q.x && (p.y < q.y || (p.y === q.y && p.z < q.z)));
+  for (let i0 = 0; i0 < atoms.length; i0++) {
+    for (const j0 of nbrs[i0]!) {
+      if (j0 < i0) continue;
+      const [i, j] = before(atoms[i0]!, atoms[j0]!) ? [i0, j0] : [j0, i0];
+      const a = atoms[i]!, Ri = a.radius + probe;
       const b = atoms[j]!, Rj = b.radius + probe;
       const ux0 = b.x - a.x, uy0 = b.y - a.y, uz0 = b.z - a.z;
       const dij = Math.hypot(ux0, uy0, uz0);
@@ -264,7 +268,8 @@ function sesField(g: Grid, atoms: Atom[], probe: number, fsas: Float32Array, has
             }
           }
         }
-        out[n] = probe - Math.sqrt(best);
+        // Capped at the query limit, so the field depends only on seeds within reach (bricks see exactly those)
+        out[n] = probe - Math.sqrt(Math.min(best, limit2));
       }
     }
   }
@@ -302,18 +307,24 @@ const EDGES: Array<[number, number]> = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], 
  * its interpolated edge crossings; one quad per crossing grid edge, wound so the normal points outward.
  * Normals come from the analytic gradient of the trilinear field in the vertex's cell.
  */
-export function surfaceNets(g: Grid, f: Float32Array, signal?: AbortSignal) {
+/** Node range [i0, i1) x [j0, j1) x [k0, k1) whose edges a mesh owns (a brick's core; default: all). */
+export interface EmitRange { i0: number; i1: number; j0: number; j1: number; k0: number; k1: number }
+
+export function surfaceNets(g: Grid, f: Float32Array, signal?: AbortSignal, range?: EmitRange) {
   const { ox, oy, oz, h, nx, ny, nz } = g;
   const cny = ny - 1, cnz = nz - 1;
+  // Cells next to an owned edge, and owned edges (quads around them)
+  const r = range ?? { i0: 0, i1: nx, j0: 0, j1: ny, k0: 0, k1: nz };
+  const ci0 = Math.max(0, r.i0 - 1), ci1 = Math.min(nx - 1, r.i1), cj0 = Math.max(0, r.j0 - 1), cj1 = Math.min(ny - 1, r.j1), ck0 = Math.max(0, r.k0 - 1), ck1 = Math.min(nz - 1, r.k1);
   const cellVert = new Int32Array((nx - 1) * cny * cnz).fill(-1);
   const pos = new FloatBuilder(1 << 16);
   const nrm = new FloatBuilder(1 << 16);
   const idx = new IndexBuilder(1 << 17);
   const v = new Float64Array(8);
 
-  for (let i = 0; i < nx - 1; i++) {
+  for (let i = ci0; i < ci1; i++) {
     checkAbort(signal);
-    for (let j = 0; j < ny - 1; j++) for (let k = 0; k < nz - 1; k++) {
+    for (let j = cj0; j < cj1; j++) for (let k = ck0; k < ck1; k++) {
       let mask = 0;
       for (let c = 0; c < 8; c++) {
         const [di, dj, dk] = CORNERS[c]!;
@@ -348,9 +359,9 @@ export function surfaceNets(g: Grid, f: Float32Array, signal?: AbortSignal) {
     if (a < 0 || b < 0 || c < 0 || d < 0) return;
     if (insideAtLow) idx.quad(a, b, c, d); else idx.quad(a, d, c, b);
   };
-  for (let i = 1; i < nx - 1; i++) {
+  for (let i = Math.max(1, r.i0); i < Math.min(nx - 1, r.i1); i++) {
     checkAbort(signal);
-    for (let j = 1; j < ny - 1; j++) for (let k = 1; k < nz - 1; k++) {
+    for (let j = Math.max(1, r.j0); j < Math.min(ny - 1, r.j1); j++) for (let k = Math.max(1, r.k0); k < Math.min(nz - 1, r.k1); k++) {
       const n = (i * ny + j) * nz + k;
       const inside = f[n]! < 0;
       // x-edge (i,j,k)->(i+1,j,k): cells around it in the (y, z) plane
@@ -417,6 +428,99 @@ export function generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions): Surfa
   return { positions, normals, indices, atomIndex: assignAtoms(atoms, positions, hash) };
 }
 
+const BRICK = 64; // nodes per brick side: larger bricks spend relatively less on their halo
+
+export interface SurfaceChunk { positions: Float32Array; normals: Float32Array; indices: Uint32Array }
+
+export interface StreamOptions extends SurfaceOptions {
+  /** Bricks nearest this point come first (default: the grid's centre). */
+  viewPoint?: Vec3;
+  /** Share of the bricks for one of several workers: every `count`-th brick in order, from `index`. */
+  part?: { index: number; count: number };
+}
+
+/**
+ * The same surface as `generate`, computed brick by brick (BRICK nodes a side, nearest `viewPoint` first)
+ * and handed to `onChunk` as each brick is done. Each brick computes the field on its nodes plus a halo
+ * wide enough for every input of the field in its core (atoms within reach, and for SES the seeds within
+ * probe + 2h), so core values match the whole-grid field; it meshes only the edges in its core, so
+ * neighbouring bricks meet without cracks or overlaps.
+ */
+export function generateStreaming(kind: Kind, atoms: Atom[], opts: StreamOptions, onChunk: (chunk: SurfaceChunk) => void) {
+  if (atoms.length === 0) return;
+  const probe = opts.probeRadius ?? 1.4;
+  const signal = opts.signal;
+  const g = makeGrid(atoms, kind === "vdw" ? 0 : probe, opts);
+  const { h, nx, ny, nz } = g;
+  const band = 2 * h;
+  let maxR = 0;
+  for (const a of atoms) maxR = Math.max(maxR, a.radius);
+  const inflate = kind === "vdw" ? 0 : probe;
+  // SES core nodes read seeds within probe + 2h, made from nodes with all 26 neighbours present: one more
+  const halo = kind === "ses" ? Math.ceil((probe + 2 * h) / h) + 2 : Math.ceil(band / h) + 1;
+  // Atoms that can affect a sub-grid: within reach of its box (generous for SES's nearest-sphere and crease queries)
+  const margin = maxR + probe + band + (kind === "ses" ? probe + 2 * h : 0);
+  const side = BRICK * h;
+
+  // Bricks, nearest the view point first
+  const bx = Math.ceil(nx / BRICK), by = Math.ceil(ny / BRICK), bz = Math.ceil(nz / BRICK);
+  const view = opts.viewPoint ?? { x: g.ox + (nx * h) / 2, y: g.oy + (ny * h) / 2, z: g.oz + (nz * h) / 2 };
+  const bricks: { bi: number; bj: number; bk: number; d: number }[] = [];
+  for (let bi = 0; bi < bx; bi++) for (let bj = 0; bj < by; bj++) for (let bk = 0; bk < bz; bk++) {
+    const cx = g.ox + (bi + 0.5) * side, cy = g.oy + (bj + 0.5) * side, cz = g.oz + (bk + 0.5) * side;
+    bricks.push({ bi, bj, bk, d: Math.hypot(cx - view.x, cy - view.y, cz - view.z) });
+  }
+  bricks.sort((a, b) => a.d - b.d);
+  const part = opts.part ?? { index: 0, count: 1 };
+
+  // Atoms binned by brick, to gather each sub-grid's atoms
+  const binOf = (bi: number, bj: number, bk: number) => (bi * by + bj) * bz + bk;
+  const bins = new Map<number, number[]>();
+  atoms.forEach((a, idx) => {
+    const key = binOf(
+      Math.min(bx - 1, Math.max(0, Math.floor((a.x - g.ox) / side))),
+      Math.min(by - 1, Math.max(0, Math.floor((a.y - g.oy) / side))),
+      Math.min(bz - 1, Math.max(0, Math.floor((a.z - g.oz) / side))));
+    (bins.get(key) ?? bins.set(key, []).get(key)!).push(idx);
+  });
+  const reach = Math.ceil((halo * h + margin) / side);
+
+  for (let order = part.index; order < bricks.length; order += part.count) {
+    const { bi, bj, bk } = bricks[order]!;
+    checkAbort(signal);
+    const i0 = bi * BRICK, i1 = Math.min(nx, i0 + BRICK), j0 = bj * BRICK, j1 = Math.min(ny, j0 + BRICK), k0 = bk * BRICK, k1 = Math.min(nz, k0 + BRICK);
+    const si0 = Math.max(0, i0 - halo), si1 = Math.min(nx, i1 + halo), sj0 = Math.max(0, j0 - halo), sj1 = Math.min(ny, j1 + halo), sk0 = Math.max(0, k0 - halo), sk1 = Math.min(nz, k1 + halo);
+    const sub: Grid = { ox: g.ox + si0 * h, oy: g.oy + sj0 * h, oz: g.oz + sk0 * h, h, nx: si1 - si0, ny: sj1 - sj0, nz: sk1 - sk0 };
+    const loX = sub.ox - margin, loY = sub.oy - margin, loZ = sub.oz - margin;
+    const hiX = sub.ox + (sub.nx - 1) * h + margin, hiY = sub.oy + (sub.ny - 1) * h + margin, hiZ = sub.oz + (sub.nz - 1) * h + margin;
+    const local: Atom[] = [];
+    for (let a = Math.max(0, bi - reach); a <= Math.min(bx - 1, bi + reach); a++)
+      for (let b = Math.max(0, bj - reach); b <= Math.min(by - 1, bj + reach); b++)
+        for (let c = Math.max(0, bk - reach); c <= Math.min(bz - 1, bk + reach); c++)
+          for (const idx of bins.get(binOf(a, b, c)) ?? []) {
+            const at = atoms[idx]!;
+            if (at.x >= loX && at.x <= hiX && at.y >= loY && at.y <= hiY && at.z >= loZ && at.z <= hiZ) local.push(at);
+          }
+    if (local.length === 0) continue;
+
+    const total = sub.nx * sub.ny * sub.nz;
+    let f: Float32Array;
+    if (kind === "ses") {
+      const fsas = new Float32Array(total).fill(FAR);
+      sphereField(sub, local, probe, band, fsas, signal);
+      f = sesField(sub, local, probe, fsas, new AtomHash(local, 4), signal);
+      const fvdw = fsas.fill(FAR);
+      sphereField(sub, local, 0, band, fvdw, signal);
+      for (let n = 0; n < total; n++) if (fvdw[n]! < f[n]!) f[n] = fvdw[n]!;
+    } else {
+      f = new Float32Array(total).fill(FAR);
+      sphereField(sub, local, inflate, band, f, signal);
+    }
+    const mesh = surfaceNets(sub, f, signal, { i0: i0 - si0, i1: i1 - si0, j0: j0 - sj0, j1: j1 - sj0, k0: k0 - sk0, k1: k1 - sk0 });
+    if (mesh.indices.length > 0) onChunk(mesh);
+  }
+}
+
 export async function generateVDW(atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
   return generate("vdw", atoms, opts);
 }
@@ -448,7 +552,7 @@ export class SurfaceWorkerClient {
   generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions = {}): Promise<SurfaceGeometry> {
     const { signal, ...options } = opts;
     return this.request((id) => ({ id, kind, atoms, options }), signal).then((res) => {
-      if (!("positions" in res)) throw new Error("unexpected pocket response");
+      if (!("positions" in res)) throw new Error("unexpected response");
       return {
         positions: new Float32Array(res.positions),
         normals: new Float32Array(res.normals),
@@ -462,7 +566,7 @@ export class SurfaceWorkerClient {
   findPockets(atoms: Atom[], opts: PocketOptions = {}): Promise<Pocket[]> {
     const { signal, ...options } = opts;
     return this.request((id) => ({ id, kind: "pockets", atoms, options }), signal).then((res) => {
-      if (!("pockets" in res)) throw new Error("unexpected surface response");
+      if (!("pockets" in res)) throw new Error("unexpected response");
       return res.pockets.map((p) => ({ ...p, positions: new Float32Array(p.positions), normals: new Float32Array(p.normals), indices: new Uint32Array(p.indices), lining: new Uint32Array(p.lining) }));
     });
   }
@@ -503,6 +607,7 @@ export class SurfaceWorkerClient {
       if (!this.pending || this.pending.id !== res.id) return;
       const { resolve, reject } = this.pending;
       this.pending = null;
+      if ("chunk" in res) return; // streamed surfaces use SurfaceStreamClient
       if (!res.ok) { reject(new Error(res.error)); return; }
       resolve(res);
     };
@@ -515,5 +620,68 @@ export class SurfaceWorkerClient {
     };
     this.worker = worker;
     return worker;
+  }
+}
+
+/**
+ * Streams a surface from a pool of workers (pair with the `chem-surface/worker` entry): each computes every
+ * `count`-th brick nearest-first, and `onChunk` receives meshes as bricks finish. Only the latest request
+ * matters: a new one, `cancel()` or aborting `signal` terminates the busy workers and rejects with AbortError.
+ */
+export class SurfaceStreamClient {
+  private workers: Worker[] = [];
+  private nextId = 1;
+  private pending: { id: number; reject: (e: unknown) => void } | null = null;
+
+  constructor(private createWorker: () => Worker, private size = Math.max(1, Math.min(4, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1))) {}
+
+  generate(kind: Kind, atoms: Atom[], opts: StreamOptions, onChunk: (chunk: SurfaceChunk) => void): Promise<void> {
+    this.cancel();
+    const { signal, ...options } = opts;
+    if (signal?.aborted) return Promise.reject(new DOMException("Surface generation aborted", "AbortError"));
+    const id = this.nextId++;
+    return new Promise<void>((resolve, reject) => {
+      this.pending = { id, reject };
+      signal?.addEventListener("abort", () => { if (this.pending?.id === id) this.cancel(); }, { once: true });
+      let running = this.size;
+      const fail = (e: unknown) => {
+        if (this.pending?.id !== id) return;
+        this.pending = null;
+        this.terminate();
+        reject(e);
+      };
+      for (let index = 0; index < this.size; index++) {
+        const worker = this.workers[index] ?? (this.workers[index] = this.createWorker());
+        worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
+          const res = ev.data;
+          if (res.id !== id || this.pending?.id !== id) return;
+          if ("chunk" in res) {
+            onChunk({ positions: new Float32Array(res.chunk.positions), normals: new Float32Array(res.chunk.normals), indices: new Uint32Array(res.chunk.indices) });
+          } else if (!res.ok) fail(new Error(res.error));
+          else if (--running === 0) { this.pending = null; resolve(); }
+        };
+        worker.onerror = (ev) => fail(new Error(ev.message || "Surface worker failed"));
+        worker.postMessage({ id, kind, stream: true, atoms, options: { ...options, part: { index, count: this.size } } } satisfies WorkerRequest);
+      }
+    });
+  }
+
+  /** Abort the in-flight request, if any. */
+  cancel() {
+    if (!this.pending) return;
+    const { reject } = this.pending;
+    this.pending = null;
+    this.terminate(); // generation is synchronous: workers can only be stopped
+    reject(new DOMException("Surface generation aborted", "AbortError"));
+  }
+
+  dispose() {
+    this.cancel();
+    this.terminate();
+  }
+
+  private terminate() {
+    for (const w of this.workers) w.terminate();
+    this.workers = [];
   }
 }
