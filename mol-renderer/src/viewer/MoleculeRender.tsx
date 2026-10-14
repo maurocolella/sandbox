@@ -82,6 +82,8 @@ export function MoleculeRender(props: MoleculeRenderProps) {
     bonds: props.renderControls.showBonds,
     backbone: backboneOptions,
   });
+  const interactingResidues = useMemo(() => new Set((props.interactions ?? []).map((it) => it.residue)), [props.interactions]);
+
   const onBuildStatus = props.onBuildStatus;
   useEffect(() => { onBuildStatus?.(objects.status); }, [objects.status, onBuildStatus]);
 
@@ -176,7 +178,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
           <InteractionLayer interactions={props.interactions ?? null} />
-          <BindingSiteLayer scene={filteredScene} ligand={props.siteLigand ?? null} />
+          <BindingSiteLayer scene={filteredScene} ligand={props.siteLigand ?? null} interacting={interactingResidues} />
           <SwapLayer molecule={props.swapMolecule ?? null} radiusScale={props.renderControls.radiusScale} />
           {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
           {props.renderControls.renderMode !== "spheres" && (
