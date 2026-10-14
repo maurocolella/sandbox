@@ -14,6 +14,7 @@
     "preview": "pnpm exec vite preview"
   },
   "dependencies": {
+    "@rdkit/rdkit": "2026.3.6",
     "@react-three/drei": "^9.121.0",
     "@react-three/fiber": "^9.0.0",
     "chem-surface": "workspace:*",

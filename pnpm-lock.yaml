@@ -113,6 +113,9 @@ importers:
 
   mol-viewer:
     dependencies:
+      '@rdkit/rdkit':
+        specifier: 2026.3.6
+        version: 2026.3.6
       '@react-three/drei':
         specifier: ^9.121.0
         version: 9.122.0(@react-three/fiber@9.3.0(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(three@0.160.1))(@types/react@19.2.2)(@types/three@0.180.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(three@0.160.1)(use-sync-external-store@1.6.0(react@19.2.0))
@@ -796,6 +799,9 @@ packages:
 
   '@radix-ui/rect@1.0.0':
     resolution: {integrity: sha512-d0O68AYy/9oeEy1DdC07bz1/ZXX+DqCskRd3i4JzLSTXwefzaepQrKjXC7aNM8lTHjFLDO0pDgaEiQ7jEk+HVg==}
+
+  '@rdkit/rdkit@2026.3.6':
+    resolution: {integrity: sha512-JkMi2PfVjRFuy3ZCDAoTUJeTGyNsgtmq4hDUduLnnbobxsOfSydfpa6lhZGYYaisfMSEAgE1iAT95W4ZsUCMrA==}
 
   '@react-spring/animated@9.7.5':
     resolution: {integrity: sha512-Tqrwz7pIlsSDITzxoLS3n/v/YCUHQdOIKtOJf4yL6kYVSDTSmVK1LI1Q3M/uu2Sx4X3pIWF3xLUhlsA6SPNTNg==}
@@ -2972,6 +2978,8 @@ snapshots:
   '@radix-ui/rect@1.0.0':
     dependencies:
       '@babel/runtime': 7.28.4
+
+  '@rdkit/rdkit@2026.3.6': {}
 
   '@react-spring/animated@9.7.5(react@19.2.0)':
     dependencies:

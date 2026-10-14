@@ -347,6 +347,8 @@ export function MainView() {
           <LigandCard
             pdbId={scene?.metadata?.pdbId ?? source.pdbId}
             compId={ligand.compId}
+            scene={filteredScene}
+            ligand={ligand}
             interactions={interactions ?? []}
             swap={swap}
             onSwap={swapIn}

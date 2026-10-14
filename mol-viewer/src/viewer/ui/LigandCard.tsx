@@ -6,7 +6,9 @@
  swapped-in one, if any), strongest first, each linked to its source. Data is fetched when shown.
 */
 import { useEffect, useState } from "react";
-import { INTERACTION_COLORS, type Interaction, type InteractionType } from "mol-renderer";
+import { INTERACTION_COLORS, type Interaction, type InteractionType, type LigandRef } from "mol-renderer";
+import type { MolScene } from "pdb-parser";
+import { InteractionMap } from "./InteractionMap";
 import { ligandInfo, moleculeAffinities, strongest, type Affinity, type LigandInfo } from "../../lib/ligandInfo";
 import { knownBinders, searchCandidates, type Candidate } from "../../lib/candidates";
 
@@ -168,13 +170,16 @@ function SwapCompare({ pdbId, reference, swap, onSwap, onClearSwap }: SwapCompar
 export interface LigandCardProps {
   pdbId?: string;
   compId: string;
+  /** The scene and ligand, for the 2D interaction map. */
+  scene?: MolScene | null;
+  ligand?: LigandRef | null;
   interactions: Interaction[];
   swap: SwapState | null;
   onSwap: (c: Candidate) => void;
   onClearSwap: () => void;
 }
 
-export function LigandCard({ pdbId, compId, interactions, swap, onSwap, onClearSwap }: LigandCardProps) {
+export function LigandCard({ pdbId, compId, scene, ligand, interactions, swap, onSwap, onClearSwap }: LigandCardProps) {
   const [state, setState] = useState<{ info?: LigandInfo; error?: string }>({});
   useEffect(() => {
     if (!pdbId) { setState({ error: "No PDB entry ID for this structure." }); return; }
@@ -220,6 +225,12 @@ export function LigandCard({ pdbId, compId, interactions, swap, onSwap, onClearS
             )}
           </div>
           {info.chemblByConnectivity && <div className="text-(--ui-muted)">ChEMBL match ignores stereochemistry (same connectivity).</div>}
+        </div>
+      )}
+      {scene && ligand && (
+        <div className="space-y-1">
+          <div className={`${heading} text-(--ui-muted)`}>Interaction map</div>
+          <InteractionMap scene={scene} ligand={ligand} interactions={interactions} />
         </div>
       )}
       <div className="space-y-1">
