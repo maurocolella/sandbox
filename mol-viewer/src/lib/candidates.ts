@@ -22,6 +22,7 @@ export interface Molecule3D {
   elements: string[];
   positions: Float32Array; // xyz, Å
   bonds: [number, number][];
+  bondOrders: number[]; // 1-3; aromatic (4) as 1, left to ring perception
 }
 
 const getJson = async (url: string) => {
@@ -96,13 +97,14 @@ function parseSdf(text: string): Molecule3D {
     elements.push(el);
     coords.push(parseFloat(l.slice(0, 10)), parseFloat(l.slice(10, 20)), parseFloat(l.slice(20, 30)));
   }
-  const bonds: [number, number][] = [];
+  const bonds: [number, number][] = [], bondOrders: number[] = [];
   for (let k = 0; k < nBonds; k++) {
     const l = lines[4 + nAtoms + k]!;
     const a = keep[parseInt(l.slice(0, 3), 10) - 1]!, b = keep[parseInt(l.slice(3, 6), 10) - 1]!;
-    if (a >= 0 && b >= 0) bonds.push([a, b]);
+    const order = parseInt(l.slice(6, 9), 10);
+    if (a >= 0 && b >= 0) { bonds.push([a, b]); bondOrders.push(order >= 1 && order <= 3 ? order : 1); }
   }
-  return { elements, positions: Float32Array.from(coords), bonds };
+  return { elements, positions: Float32Array.from(coords), bonds, bondOrders };
 }
 
 /** The largest fragment of a SMILES: the parent molecule of a salt or hydrate ("drug.Cl", "drug.O"). */

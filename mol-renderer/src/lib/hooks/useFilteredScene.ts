@@ -88,6 +88,7 @@ export function useFilteredScene(scene: MolScene | null, selectedChainIndices: n
       const idxB = scene.bonds.indexB;
       const keptA: number[] = [];
       const keptB: number[] = [];
+      const kept: number[] = [];
       for (let i = 0; i < scene.bonds.count; i++) {
         const oa = idxA[i]!;
         const ob = idxB[i]!;
@@ -96,13 +97,15 @@ export function useFilteredScene(scene: MolScene | null, selectedChainIndices: n
         if (na >= 0 && nb >= 0) {
           keptA.push(na);
           keptB.push(nb);
+          kept.push(i);
         }
       }
       newBonds = {
         count: keptA.length,
         indexA: Uint32Array.from(keptA),
         indexB: Uint32Array.from(keptB),
-        order: scene.bonds.order ? Uint8Array.from(keptA.map((_, i) => scene.bonds!.order![i]!)) : undefined,
+        order: scene.bonds.order ? Uint8Array.from(kept, (i) => scene.bonds!.order![i]!) : undefined,
+        aromatic: scene.bonds.aromatic ? Uint8Array.from(kept, (i) => scene.bonds!.aromatic![i]!) : undefined,
       };
     }
 

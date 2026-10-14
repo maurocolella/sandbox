@@ -347,19 +347,19 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
   // --- Bonds -----------------------------------------------------------------------------------------
   let bonds: MolScene["bonds"];
   if (options.bonds !== false && count > 0) {
-    const bondA: number[] = [], bondB: number[] = [], bondOrder: number[] = [];
-    const add = (a: number, b: number, order: number) => { bondA.push(a); bondB.push(b); bondOrder.push(order); };
+    const bondA: number[] = [], bondB: number[] = [], bondOrder: number[] = [], bondAromatic: number[] = [];
+    const add = (a: number, b: number, order: number, aromatic = 0) => { bondA.push(a); bondB.push(b); bondOrder.push(order); bondAromatic.push(aromatic); };
 
     // Templates from the file's chem_comp_bond (wwPDB files now embed them for every component)
-    const templates = new Map<string, [string, string, number][]>();
+    const templates = new Map<string, [string, string, number, number][]>();
     const ccb = block?.category("chem_comp_bond");
     if (ccb) {
-      const comp = ccb.getField("comp_id"), a1 = ccb.getField("atom_id_1"), a2 = ccb.getField("atom_id_2"), ord = ccb.getField("value_order");
+      const comp = ccb.getField("comp_id"), a1 = ccb.getField("atom_id_1"), a2 = ccb.getField("atom_id_2"), ord = ccb.getField("value_order"), arom = ccb.getField("pdbx_aromatic_flag");
       for (let r = 0; comp && a1 && a2 && r < ccb.rowCount; r++) {
         const o = (ord?.str(r) ?? "sing").toLowerCase();
         const order = o === "doub" ? 2 : o === "trip" ? 3 : o === "quad" ? 4 : 1;
         const list = templates.get(comp.str(r)) ?? [];
-        list.push([a1.str(r), a2.str(r), order]);
+        list.push([a1.str(r), a2.str(r), order, arom?.str(r).toUpperCase() === "Y" ? 1 : 0]);
         templates.set(comp.str(r), list);
       }
     }
@@ -386,10 +386,10 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
         const tpl = templates.get(comp);
         if (tpl) {
           const m = nameMap(ri, comps.size > 1 ? comp : undefined);
-          for (const [n1, n2, order] of tpl) {
+          for (const [n1, n2, order, aromatic] of tpl) {
             const as = m.get(n1), bs = m.get(n2);
             if (!as || !bs) continue;
-            for (const a of as) for (const b of bs) if (altCompatible(a, b)) add(a, b, order);
+            for (const a of as) for (const b of bs) if (altCompatible(a, b)) add(a, b, order, aromatic);
           }
         } else {
           // Distance heuristic within the residue (covalent radii + 0.45 A tolerance)
@@ -475,7 +475,7 @@ export function mmcifToMolScene(doc: CifDocument, options: MmcifLoadOptions = {}
       }
     }
 
-    bonds = { count: bondA.length, indexA: Uint32Array.from(bondA), indexB: Uint32Array.from(bondB), order: Uint8Array.from(bondOrder) };
+    bonds = { count: bondA.length, indexA: Uint32Array.from(bondA), indexB: Uint32Array.from(bondB), order: Uint8Array.from(bondOrder), aromatic: Uint8Array.from(bondAromatic) };
   }
 
   const entryId = fieldStr(block?.category("entry"), "id", 0) || block?.name || undefined;

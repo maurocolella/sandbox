@@ -98,7 +98,7 @@ export function subsetMolSceneByChains(scene: MolScene, includeChains: number[])
   // Bonds subset and remap
   let bondsNew: MolScene["bonds"] | undefined = undefined;
   if (scene.bonds && scene.bonds.count > 0) {
-    const pairs: Array<{ a: number; b: number; ord: number }> = [];
+    const pairs: Array<{ a: number; b: number; ord: number; arom: number }> = [];
     for (let i = 0; i < scene.bonds.count; i++) {
       const oa = scene.bonds.indexA[i]!;
       const ob = scene.bonds.indexB[i]!;
@@ -108,19 +108,21 @@ export function subsetMolSceneByChains(scene: MolScene, includeChains: number[])
       const a = Math.min(na, nb);
       const b = Math.max(na, nb);
       const ord = scene.bonds.order ? scene.bonds.order[i]! : 1;
-      pairs.push({ a, b, ord });
+      pairs.push({ a, b, ord, arom: scene.bonds.aromatic ? scene.bonds.aromatic[i]! : 0 });
     }
     if (pairs.length > 0) {
       const count = pairs.length;
       const indexA = new Uint32Array(count);
       const indexB = new Uint32Array(count);
       const order = scene.bonds.order ? new Uint8Array(count) : undefined;
+      const aromatic = scene.bonds.aromatic ? new Uint8Array(count) : undefined;
       for (let i = 0; i < count; i++) {
         indexA[i] = pairs[i]!.a >>> 0;
         indexB[i] = pairs[i]!.b >>> 0;
         if (order) order[i] = pairs[i]!.ord as 1 | 2 | 3 as number;
+        if (aromatic) aromatic[i] = pairs[i]!.arom;
       }
-      bondsNew = { count, indexA, indexB, order };
+      bondsNew = { count, indexA, indexB, order, aromatic };
     }
   }
 

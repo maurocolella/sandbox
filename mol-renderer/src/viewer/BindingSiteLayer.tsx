@@ -11,6 +11,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { MolScene } from "pdb-parser";
 import { ligandAtoms, type LigandKey } from "../lib/interactions";
+import { buildBondSticks } from "../lib/bondSticks";
 
 const CUTOFF = 5; // Å
 const RADIUS = 0.1; // Å, sticks and joints
@@ -93,29 +94,19 @@ export function BindingSiteLayer({ scene, ligand, interacting, farOpacity = 0, l
     });
     group.add(joints);
 
-    // Bonds within the site; each half takes its atom's colour
-    const inSite = new Uint8Array(scene.atoms.count);
-    for (const i of atoms) inSite[i] = 1;
-    const halves: [number, number][] = [];
+    // Bonds within the site, showing their order
+    const local = new Int32Array(scene.atoms.count).fill(-1);
+    atoms.forEach((i, k) => { local[i] = k; });
+    const bonds: [number, number][] = [], order: number[] = [], aromatic: number[] = [];
     const b = scene.bonds;
     for (let k = 0; b && k < b.count; k++) {
-      const x = b.indexA[k]!, y = b.indexB[k]!;
-      if (inSite[x] && inSite[y]) halves.push([x, y], [y, x]);
+      const x = local[b.indexA[k]!]!, y = local[b.indexB[k]!]!;
+      if (x >= 0 && y >= 0) { bonds.push([x, y]); order.push(b.order?.[k] ?? 1); aromatic.push(b.aromatic?.[k] ?? 0); }
     }
-    if (halves.length > 0) {
-      const sticks = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 10, 1, true), new THREE.MeshStandardMaterial({ roughness: 0.4 }), halves.length);
-      const up = new THREE.Vector3(0, 1, 0), from = new THREE.Vector3(), to = new THREE.Vector3(), dir = new THREE.Vector3();
-      halves.forEach(([x, y], k) => {
-        from.set(P[x * 3]!, P[x * 3 + 1]!, P[x * 3 + 2]!);
-        to.set(P[y * 3]!, P[y * 3 + 1]!, P[y * 3 + 2]!).add(from).multiplyScalar(0.5);
-        dir.subVectors(to, from);
-        const len = dir.length();
-        q.setFromUnitVectors(up, dir.normalize());
-        sticks.setMatrixAt(k, m.compose(p.addVectors(from, to).multiplyScalar(0.5), q, s.set(RADIUS, len, RADIUS)));
-        sticks.setColorAt(k, colorOf(x, color));
-      });
-      group.add(sticks);
-    }
+    const positions = new Float32Array(atoms.length * 3);
+    atoms.forEach((i, k) => positions.set([P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!], k * 3));
+    const sticks = buildBondSticks({ positions, bonds, order, aromatic, radius: RADIUS, color: (k, out) => colorOf(atoms[k]!, out), radialSegments: 10 });
+    if (sticks) group.add(sticks);
     group.traverse((o) => { o.raycast = () => {}; });
     return { group, labels };
   }, [scene, ligand]);

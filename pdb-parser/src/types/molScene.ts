@@ -14,7 +14,8 @@ export interface MolScene {
     count: number;
     indexA: Uint32Array;
     indexB: Uint32Array;
-    order?: Uint8Array; // 1=single, 2=double, ...
+    order?: Uint8Array; // 1=single, 2=double, ... (Kekulé form for aromatic bonds)
+    aromatic?: Uint8Array; // 1 = in an aromatic ring
   };
   backbone?: {
     positions: Float32Array; // concatenated polyline points

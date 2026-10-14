@@ -77,14 +77,14 @@ export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolS
     atoms.forEach((i, k) => { local[i] = k; });
     const positions = new Float32Array(atoms.length * 3);
     atoms.forEach((i, k) => positions.set([P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!], k * 3));
-    const bonds: [number, number][] = [];
+    const bonds: [number, number][] = [], order: number[] = [], aromatic: number[] = [];
     const b = scene.bonds;
     for (let k = 0; b && k < b.count; k++) {
       const x = local[b.indexA[k]!]!, y = local[b.indexB[k]!]!;
-      if (x >= 0 && y >= 0) bonds.push([x, y]);
+      if (x >= 0 && y >= 0) { bonds.push([x, y]); order.push(b.order?.[k] ?? 1); aromatic.push(b.aromatic?.[k] ?? 0); }
     }
     const { group, balls } = buildBallAndStick({
-      positions, bonds, stickRadius: STICK_RADIUS,
+      positions, bonds, order, aromatic, stickRadius: STICK_RADIUS,
       radius: (k) => (R?.[atoms[k]!] ?? 1.5) * radiusScale * BALL_OVER,
       color: (k, out) => {
         const i = atoms[k]!;

@@ -139,7 +139,7 @@ export function MainView() {
     const sameRequest = (cur: typeof swap) => cur?.candidate.id === candidate.id;
     conformer3D(candidate.smiles).then((mol) => {
       const { positions, shape, clashes } = alignOntoLigand(filteredScene, ligand, mol);
-      setSwap((cur) => (sameRequest(cur) ? { candidate, status: "ready", fit: { shape, clashes }, molecule: { elements: mol.elements, positions, bonds: mol.bonds } } : cur));
+      setSwap((cur) => (sameRequest(cur) ? { candidate, status: "ready", fit: { shape, clashes }, molecule: { elements: mol.elements, positions, bonds: mol.bonds, bondOrders: mol.bondOrders } } : cur));
     }).catch((e) => {
       setSwap((cur) => (sameRequest(cur) ? { candidate, status: "error", error: e instanceof Error ? e.message : String(e) } : cur));
     });

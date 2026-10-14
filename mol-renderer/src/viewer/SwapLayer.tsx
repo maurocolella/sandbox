@@ -8,11 +8,14 @@ import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { elementColorRGB, vdwRadius } from "pdb-parser";
 import { buildBallAndStick, disposeGroup } from "../lib/ballAndStick";
+import { perceiveAromatic } from "../lib/bondSticks";
 
 export interface SwapMolecule {
   elements: string[];
   positions: Float32Array; // xyz, Å, already placed
   bonds: [number, number][];
+  /** Per bond, 1-3 (Kekulé); aromatic rings are perceived from it. */
+  bondOrders?: number[];
 }
 
 const CARBON = new THREE.Color(0x14b8a6);
@@ -23,7 +26,8 @@ export function SwapLayer({ molecule, radiusScale }: { molecule: SwapMolecule | 
   const group = useMemo(() => {
     if (!molecule) return new THREE.Group();
     const { group } = buildBallAndStick({
-      positions: molecule.positions, bonds: molecule.bonds, stickRadius: STICK_RADIUS,
+      positions: molecule.positions, bonds: molecule.bonds, stickRadius: STICK_RADIUS, order: molecule.bondOrders,
+      aromatic: molecule.bondOrders && perceiveAromatic(molecule.elements.length, molecule.elements, molecule.bonds, molecule.bondOrders),
       radius: (i) => vdwRadius(molecule.elements[i]!) * radiusScale * BALL_OVER,
       color: (i, out) => {
         const el = molecule.elements[i]!;
