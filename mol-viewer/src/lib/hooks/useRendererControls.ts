@@ -18,7 +18,7 @@ const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, wirefr
 export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
 const stylingDefaults = (theme: Theme) => ({
   background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true,
-  farOpacity: 0.3, labelAllResidues: true,
+  farOpacity: 0, labelAllResidues: true,
 });
 
 export interface RendererControls {

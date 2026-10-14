@@ -72,7 +72,7 @@ export interface BindingSiteLayerProps {
   labelAllResidues?: boolean;
 }
 
-export function BindingSiteLayer({ scene, ligand, interacting, farOpacity = 0.3, labelAllResidues = true }: BindingSiteLayerProps) {
+export function BindingSiteLayer({ scene, ligand, interacting, farOpacity = 0, labelAllResidues = true }: BindingSiteLayerProps) {
   const invalidate = useThree((s) => s.invalidate);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const camPos = useMemo(() => new THREE.Vector3(), []);
