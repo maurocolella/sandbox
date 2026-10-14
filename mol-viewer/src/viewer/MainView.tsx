@@ -36,7 +36,6 @@ function pocketColor(score: number): number {
   return POCKET_STOPS[POCKET_STOPS.length - 1]![1];
 }
 const INITIAL_SOURCE = "3J2T";
-const PREVIEW_SURFACE_VOXEL = 2.5; // Å: a VDW surface this coarse takes ~5% of a full SES
 
 // Leva drawn flat and see-through, so the window's frosting shows; text and inputs follow the UI theme
 const LEVA_THEME = {
@@ -203,31 +202,14 @@ export function MainView() {
     return () => { cancelled = true; };
   }, [filteredScene, pocketsOn]);
 
-  // The previous surface stays on screen until the new one arrives; only disabling clears it. When none is
-  // shown for these atoms yet, a coarse preview (a VDW surface for SES, which skips SES's per-atom work)
-  // runs in a second worker alongside the full surface and shows until the full one replaces it.
-  const previewClient = useRef<SurfaceWorkerClient | null>(null);
+  // The previous surface stays on screen until the new one arrives; only disabling clears it
   useEffect(() => {
-    const client = new SurfaceWorkerClient(() => new SurfaceWorker());
-    previewClient.current = client;
-    return () => { client.dispose(); previewClient.current = null; };
-  }, []);
-  const surfaceShownFor = useRef<Atom[] | null>(null);
-  useEffect(() => {
-    const client = surfaceClient.current, preview = previewClient.current;
-    if (!surfaceOn || atomsInput.length === 0 || !client) {
-      client?.cancel(); preview?.cancel(); setSurfaceData(null); surfaceShownFor.current = null; return;
-    }
-    let cancelled = false, final = false;
-    const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
-    if (preview && surfaceShownFor.current !== atomsInput && PREVIEW_SURFACE_VOXEL > surface.voxelSize) {
-      preview.generate(surface.kind === "ses" ? "vdw" : surface.kind, atomsInput, { probeRadius: surface.probeRadius, voxelSize: PREVIEW_SURFACE_VOXEL })
-        .then((geom) => { if (!cancelled && !final) setSurfaceData(geom); })
-        .catch((e) => { if (!isAbort(e)) console.error("Surface preview failed", e); });
-    }
+    const client = surfaceClient.current;
+    if (!surfaceOn || atomsInput.length === 0 || !client) { client?.cancel(); setSurfaceData(null); return; }
+    let cancelled = false;
     client.generate(surface.kind, atomsInput, { probeRadius: surface.probeRadius, voxelSize: surface.voxelSize })
-      .then((geom) => { if (cancelled) return; final = true; preview?.cancel(); setSurfaceData(geom); surfaceShownFor.current = atomsInput; })
-      .catch((e) => { if (!isAbort(e)) console.error("Surface generation failed", e); });
+      .then((geom) => { if (!cancelled) setSurfaceData(geom); })
+      .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Surface generation failed", e); });
     return () => { cancelled = true; };
   }, [atomsInput, surfaceOn, surface.kind, surface.probeRadius, surface.voxelSize]);
 
