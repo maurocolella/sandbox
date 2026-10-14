@@ -42,6 +42,8 @@ interface MoleculeRenderProps {
   surfaceOpacity?: number; // 0..1, 1 = opaque
   /** A ligand swapped into a pocket, already placed. */
   swapMolecule?: SwapMolecule | null;
+  /** Binding-site labels: opacity of the farthest, and whether non-interacting residues are labelled. */
+  siteLabels?: { farOpacity: number; allResidues: boolean };
   /** Ligand whose binding site (residues within 5 Å) is shown as sticks. */
   siteLigand?: LigandRef | null;
   /** Ligand-polymer interactions to draw. */
@@ -178,7 +180,13 @@ export function MoleculeRender(props: MoleculeRenderProps) {
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
           <PocketLayer pockets={props.pockets ?? null} />
           <InteractionLayer interactions={props.interactions ?? null} />
-          <BindingSiteLayer scene={filteredScene} ligand={props.siteLigand ?? null} interacting={interactingResidues} />
+          <BindingSiteLayer
+            scene={filteredScene}
+            ligand={props.siteLigand ?? null}
+            interacting={interactingResidues}
+            farOpacity={props.siteLabels?.farOpacity}
+            labelAllResidues={props.siteLabels?.allResidues}
+          />
           <SwapLayer molecule={props.swapMolecule ?? null} radiusScale={props.renderControls.radiusScale} />
           {props.renderControls.showLigands && <LigandLayer scene={filteredScene} radiusScale={props.renderControls.radiusScale} onLigandClick={props.onLigandClick} />}
           {props.renderControls.renderMode !== "spheres" && (

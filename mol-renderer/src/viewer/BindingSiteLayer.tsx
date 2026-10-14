@@ -2,8 +2,8 @@
  Title: BindingSiteLayer
  Description: The binding site of a ligand: polymer residues with any atom within CUTOFF of it, as licorice
  sticks (grey carbons, element colours otherwise) with a label at each residue's CA. Labels of residues
- that interact with the ligand stand out; the rest are lighter. All fade with depth across the site (the
- nearest full strength, the farthest at FAR_OPACITY), updated as the camera moves.
+ that interact with the ligand stand out; the rest are lighter (or unlabelled). All fade with depth across
+ the site (the nearest full strength, the farthest at farOpacity), updated as the camera moves.
 */
 import { useEffect, useMemo, useRef } from "react";
 import { Html } from "@react-three/drei";
@@ -15,7 +15,6 @@ import { ligandAtoms, type LigandKey } from "../lib/interactions";
 const CUTOFF = 5; // Å
 const RADIUS = 0.1; // Å, sticks and joints
 const CARBON = new THREE.Color(0xb4b4b4);
-const FAR_OPACITY = 0.3;
 const LABEL_STYLE: React.CSSProperties = {
   whiteSpace: "nowrap", padding: "0 4px", borderRadius: 3, font: "10px ui-monospace, SFMono-Regular, Menlo, monospace",
   color: "var(--ui-muted, #a1a1aa)", background: "var(--ui-bg, rgb(24 24 27 / 0.55))",
@@ -67,9 +66,13 @@ export interface BindingSiteLayerProps {
   ligand: LigandKey | null;
   /** Residues (as "NAME chain seq") that interact with the ligand: their labels stand out. */
   interacting?: Set<string>;
+  /** Opacity of the farthest labels (the nearest are opaque). */
+  farOpacity?: number;
+  /** Label residues that don't interact with the ligand too. */
+  labelAllResidues?: boolean;
 }
 
-export function BindingSiteLayer({ scene, ligand, interacting }: BindingSiteLayerProps) {
+export function BindingSiteLayer({ scene, ligand, interacting, farOpacity = 0.3, labelAllResidues = true }: BindingSiteLayerProps) {
   const invalidate = useThree((s) => s.invalidate);
   const labelRefs = useRef<(HTMLDivElement | null)[]>([]);
   const camPos = useMemo(() => new THREE.Vector3(), []);
@@ -124,21 +127,24 @@ export function BindingSiteLayer({ scene, ligand, interacting }: BindingSiteLaye
     });
   }, [group, invalidate]);
 
+  const shown = useMemo(() => (labelAllResidues ? labels : labels.filter((l) => interacting?.has(l.key))), [labels, labelAllResidues, interacting]);
+  useEffect(() => { invalidate(); }, [farOpacity, shown, invalidate]);
+
   // Depth fade, written straight to the label elements (no re-render)
   useFrame(({ camera }) => {
-    if (labels.length === 0) return;
+    if (shown.length === 0) return;
     camera.getWorldPosition(camPos);
-    const d = labels.map((l) => l.at.distanceTo(camPos));
+    const d = shown.map((l) => l.at.distanceTo(camPos));
     const near = Math.min(...d), span = Math.max(...d) - near || 1;
     labelRefs.current.forEach((el, k) => {
-      if (el) el.style.opacity = String(1 - (1 - FAR_OPACITY) * ((d[k]! - near) / span));
+      if (el && k < d.length) el.style.opacity = String(1 - (1 - farOpacity) * ((d[k]! - near) / span));
     });
   });
 
   return (
     <>
       <primitive object={group} />
-      {labels.map((l, k) => (
+      {shown.map((l, k) => (
         <Html key={k} position={l.at} center zIndexRange={[3, 0]} style={{ pointerEvents: "none" }}>
           <div ref={(el) => { labelRefs.current[k] = el; }} style={interacting?.has(l.key) ? KEY_LABEL_STYLE : LABEL_STYLE}>{l.text}</div>
         </Html>

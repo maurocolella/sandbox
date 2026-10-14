@@ -1,7 +1,7 @@
 /*
  Title: useRendererControls
  Description: Leva controls for the viewer's floating windows (parsing, surface, and styling with its scene,
- spheres and selection sections), one store per window so each renders in its own panel. The default
+ spheres, selection and labels sections), one store per window so each renders in its own panel. The default
  background follows the UI theme. Everyday toggles (representation,
  visibility, selection mode, surface on/off) live in the side column, not here. `reset` restores a
  window's defaults.
@@ -16,7 +16,10 @@ export type ControlWindow = "parsing" | "surface" | "styling";
 const PARSING_DEFAULTS = { altLocPolicy: "occupancy", bondPolicy: "conect+heuristic", useModelSelection: false, modelSelection: 1 };
 const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, wireframe: false, opacity: 1 };
 export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
-const stylingDefaults = (theme: Theme) => ({ background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true });
+const stylingDefaults = (theme: Theme) => ({
+  background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true,
+  farOpacity: 0.3, labelAllResidues: true,
+});
 
 export interface RendererControls {
   stores: Record<ControlWindow, Store>;
@@ -38,6 +41,8 @@ export interface RendererControls {
   style: { background: string };
   spheres: { radiusScale: number };
   selection: { hoverTint: string; onTopHighlight: boolean };
+  /** Binding-site labels: opacity of the farthest, and whether non-interacting residues are labelled. */
+  labels: { farOpacity: number; allResidues: boolean };
 }
 
 export function useRendererControls(theme: Theme): RendererControls {
@@ -73,6 +78,10 @@ export function useRendererControls(theme: Theme): RendererControls {
       hoverTint: { value: stylingDefaults(theme).hoverTint },
       onTopHighlight: { value: stylingDefaults(theme).onTopHighlight },
     }),
+    Labels: folder({
+      farOpacity: { value: stylingDefaults(theme).farOpacity, min: 0, max: 1, step: 0.05 },
+      labelAllResidues: { value: stylingDefaults(theme).labelAllResidues },
+    }),
   }), { store: stores.styling });
 
   return {
@@ -99,5 +108,6 @@ export function useRendererControls(theme: Theme): RendererControls {
     style: { background: String(styling.background) },
     spheres: { radiusScale: Number(styling.radiusScale) },
     selection: { hoverTint: String(styling.hoverTint), onTopHighlight: Boolean(styling.onTopHighlight) },
+    labels: { farOpacity: Number(styling.farOpacity), allResidues: Boolean(styling.labelAllResidues) },
   };
 }
