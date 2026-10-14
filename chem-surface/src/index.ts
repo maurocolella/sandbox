@@ -624,9 +624,9 @@ export class SurfaceWorkerClient {
 }
 
 /**
- * Streams a surface from a pool of workers (pair with the `chem-surface/worker` entry): each computes every
- * `count`-th brick nearest-first, and `onChunk` receives meshes as bricks finish. Only the latest request
- * matters: a new one, `cancel()` or aborting `signal` terminates the busy workers and rejects with AbortError.
+ * Streams surfaces and pockets from a pool of workers (pair with the `chem-surface/worker` entry), pieces
+ * nearest the viewer first. Only the latest request matters: a new one, `cancel()` or aborting `signal`
+ * terminates the busy workers and rejects with AbortError.
  */
 export class SurfaceStreamClient {
   private workers: Worker[] = [];
@@ -635,34 +635,34 @@ export class SurfaceStreamClient {
 
   constructor(private createWorker: () => Worker, private size = Math.max(1, Math.min(4, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1))) {}
 
+  /** Each worker computes every `size`-th brick; `onChunk` receives meshes as bricks finish. */
   generate(kind: Kind, atoms: Atom[], opts: StreamOptions, onChunk: (chunk: SurfaceChunk) => void): Promise<void> {
-    this.cancel();
     const { signal, ...options } = opts;
-    if (signal?.aborted) return Promise.reject(new DOMException("Surface generation aborted", "AbortError"));
-    const id = this.nextId++;
-    return new Promise<void>((resolve, reject) => {
-      this.pending = { id, reject };
-      signal?.addEventListener("abort", () => { if (this.pending?.id === id) this.cancel(); }, { once: true });
-      let running = this.size;
-      const fail = (e: unknown) => {
-        if (this.pending?.id !== id) return;
-        this.pending = null;
-        this.terminate();
-        reject(e);
-      };
-      for (let index = 0; index < this.size; index++) {
-        const worker = this.workers[index] ?? (this.workers[index] = this.createWorker());
-        worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
-          const res = ev.data;
-          if (res.id !== id || this.pending?.id !== id) return;
-          if ("chunk" in res) {
-            onChunk({ positions: new Float32Array(res.chunk.positions), normals: new Float32Array(res.chunk.normals), indices: new Uint32Array(res.chunk.indices) });
-          } else if (!res.ok) fail(new Error(res.error));
-          else if (--running === 0) { this.pending = null; resolve(); }
-        };
-        worker.onerror = (ev) => fail(new Error(ev.message || "Surface worker failed"));
-        worker.postMessage({ id, kind, stream: true, atoms, options: { ...options, part: { index, count: this.size } } } satisfies WorkerRequest);
-      }
+    return this.run(signal, async (id, post) => {
+      await Promise.all(Array.from({ length: this.size }, (_, index) =>
+        post(index, { id, kind, stream: true, atoms, options: { ...options, part: { index, count: this.size } } }, (c) => onChunk(c))));
+    });
+  }
+
+  /**
+   * Detects pockets (see findPockets) in one worker, then meshes them across the pool, nearest `viewPoint`
+   * first (default: best first). `onPocket` receives each with its mesh and its index in best-first order.
+   */
+  findPockets(atoms: Atom[], opts: PocketOptions & { viewPoint?: Vec3 }, onPocket: (index: number, pocket: Pocket) => void): Promise<void> {
+    const { signal, viewPoint, ...options } = opts;
+    return this.run(signal, async (id, post) => {
+      const res = await post(0, { id, kind: "pockets", atoms, options: { ...options, mesh: false } });
+      if (!("pockets" in res)) throw new Error("unexpected response");
+      const found = res.pockets.map((p) => ({ ...p, lining: new Uint32Array(p.lining) }));
+      const d2 = (c: Vec3) => (viewPoint ? (c.x - viewPoint.x) ** 2 + (c.y - viewPoint.y) ** 2 + (c.z - viewPoint.z) ** 2 : 0);
+      const order = found.map((_, i) => i).sort((a, b) => d2(found[a]!.center) - d2(found[b]!.center) || a - b);
+      const n = Math.min(this.size, order.length);
+      await Promise.all(Array.from({ length: n }, (_, w) => {
+        const sets = order.filter((_, k) => k % n === w).map((index) => ({ index, atoms: Array.from(found[index]!.lining, (i) => atoms[i]!) }));
+        return post(w, { id, kind: "pocket-meshes", sets }, (c, index) => {
+          if (index !== undefined) onPocket(index, { ...found[index]!, ...c });
+        });
+      }));
     });
   }
 
@@ -680,8 +680,38 @@ export class SurfaceStreamClient {
     this.terminate();
   }
 
+  /** Runs `body` as the latest request; `post` sends a message to a pool worker and settles on its final reply. */
+  private run<T>(signal: AbortSignal | undefined, body: (id: number, post: Post) => Promise<T>): Promise<T> {
+    this.cancel();
+    if (signal?.aborted) return Promise.reject(new DOMException("Surface generation aborted", "AbortError"));
+    const id = this.nextId++;
+    const live = () => this.pending?.id === id;
+    return new Promise<T>((resolve, reject) => {
+      this.pending = { id, reject };
+      signal?.addEventListener("abort", () => { if (live()) this.cancel(); }, { once: true });
+      const post: Post = (index, msg, onChunk) => new Promise((done, fail) => {
+        const worker = this.workers[index] ?? (this.workers[index] = this.createWorker());
+        worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
+          const r = ev.data;
+          if (r.id !== id || !live()) return;
+          if ("chunk" in r) onChunk?.({ positions: new Float32Array(r.chunk.positions), normals: new Float32Array(r.chunk.normals), indices: new Uint32Array(r.chunk.indices) }, r.index);
+          else if (!r.ok) fail(new Error(r.error));
+          else done(r);
+        };
+        worker.onerror = (ev) => fail(new Error(ev.message || "Surface worker failed"));
+        worker.postMessage(msg);
+      });
+      body(id, post).then(
+        (v) => { if (live()) { this.pending = null; resolve(v); } },
+        (e) => { if (live()) { this.pending = null; this.terminate(); reject(e); } },
+      );
+    });
+  }
+
   private terminate() {
     for (const w of this.workers) w.terminate();
     this.workers = [];
   }
 }
+
+type Post = (index: number, msg: WorkerRequest, onChunk?: (chunk: SurfaceChunk, index?: number) => void) => Promise<WorkerResponse & { ok: true }>;

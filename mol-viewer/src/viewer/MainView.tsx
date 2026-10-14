@@ -9,7 +9,7 @@ import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene, findInteractions } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
 import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef, SwapMolecule } from "mol-renderer";
-import { SurfaceWorkerClient, SurfaceStreamClient, type Atom } from "chem-surface";
+import { SurfaceStreamClient, type Atom } from "chem-surface";
 import type { Camera } from "three";
 import SurfaceWorker from "chem-surface/worker?worker";
 import { Leva, LevaPanel } from "leva";
@@ -176,9 +176,9 @@ export function MainView() {
 
   // Pockets: polymer atoms only, so ligand, water and ion sites show as pockets; own worker, so the
   // surface and pockets don't cancel each other
-  const pocketClient = useRef<SurfaceWorkerClient | null>(null);
+  const pocketClient = useRef<SurfaceStreamClient | null>(null);
   useEffect(() => {
-    const client = new SurfaceWorkerClient(() => new SurfaceWorker());
+    const client = new SurfaceStreamClient(() => new SurfaceWorker());
     pocketClient.current = client;
     return () => { client.dispose(); pocketClient.current = null; };
   }, []);
@@ -196,10 +196,16 @@ export function MainView() {
       atoms.push({ x: pos[i * 3]!, y: pos[i * 3 + 1]!, z: pos[i * 3 + 2]!, radius: rad[i]! });
       groups.push(residueIndex ? residueIndex[i]! : i);
     }
-    let cancelled = false;
-    // Each pocket is drawn as the surface of the residues lining it
-    client.findPockets(atoms, { atomGroups: Int32Array.from(groups) })
-      .then((found) => { if (!cancelled) setPockets(found.map((p) => ({ positions: p.positions, normals: p.normals, indices: p.indices, color: pocketColor(p.score) }))); })
+    let cancelled = false, first = true;
+    const p = cameraRef.current?.position;
+    // Each pocket is drawn as the surface of the residues lining it; they stream in nearest first, and the
+    // previous pockets stay until the first new one arrives
+    client.findPockets(atoms, { atomGroups: Int32Array.from(groups), viewPoint: p && { x: p.x, y: p.y, z: p.z } }, (_, pocket) => {
+      if (cancelled) return;
+      const mesh = { positions: pocket.positions, normals: pocket.normals, indices: pocket.indices, color: pocketColor(pocket.score) };
+      if (first) { first = false; setPockets([mesh]); } else setPockets((prev) => [...(prev ?? []), mesh]);
+    })
+      .then(() => { if (!cancelled && first) setPockets([]); })
       .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Pocket detection failed", e); });
     return () => { cancelled = true; };
   }, [filteredScene, pocketsOn]);

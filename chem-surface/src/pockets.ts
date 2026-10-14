@@ -19,6 +19,8 @@ export interface PocketOptions {
   maxGridPoints?: number; // default 16M
   /** Group (e.g. residue) of each atom: a pocket is lined by whole groups. */
   atomGroups?: Int32Array;
+  /** Mesh each pocket (default true); otherwise meshes are empty, for pocketSurface later. */
+  mesh?: boolean;
   signal?: AbortSignal;
 }
 
@@ -34,6 +36,9 @@ export interface Pocket {
   score: number; // 0..1: buriedness and size
   center: Vec3;
 }
+
+/** The surface drawn for a pocket: the molecular surface of its lining atoms. */
+export const pocketSurface = (lining: Atom[], signal?: AbortSignal) => generate("ses", lining, { probeRadius: 1.4, voxelSize: 0.5, signal });
 
 const DIRECTIONS: [number, number, number][] = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1], [1, 1, -1], [1, -1, 1], [-1, 1, 1]];
 const PROTEIN = 2, BLOCKED = 1;
@@ -177,7 +182,9 @@ export function findPockets(atoms: Atom[], opts: PocketOptions = {}): Pocket[] {
   return scored.map(({ vol, r, buriedness, score }, k) => {
     checkAbort(signal);
     const idx = Uint32Array.from([...lining[k]!].sort((a, b) => a - b));
-    const { positions, normals, indices } = generate("ses", Array.from(idx, (i) => atoms[i]!), { probeRadius: 1.4, voxelSize: 0.5, signal });
+    const { positions, normals, indices } = opts.mesh === false
+      ? { positions: new Float32Array(0), normals: new Float32Array(0), indices: undefined }
+      : pocketSurface(Array.from(idx, (i) => atoms[i]!), signal);
     return {
       positions, normals, indices: indices ?? new Uint32Array(0), lining: idx, volume: vol, buriedness, score,
       center: { x: g.ox + (r.cx / r.voxels) * h, y: g.oy + (r.cy / r.voxels) * h, z: g.oz + (r.cz / r.voxels) * h },

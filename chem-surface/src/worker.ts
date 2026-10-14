@@ -1,5 +1,5 @@
 import { generateVDW, generateSAS, generateSES, generateStreaming, type Atom, type SurfaceOptions, type SurfaceGeometry, type SurfaceKind, type StreamOptions } from './index.js';
-import { findPockets, type PocketOptions } from './pockets.js';
+import { findPockets, pocketSurface, type PocketOptions } from './pockets.js';
 
 export type { SurfaceKind } from './index.js';
 
@@ -11,7 +11,8 @@ export type SurfaceRequest =
       options?: Omit<SurfaceOptions, 'signal'>; // AbortSignal cannot cross the worker boundary
     }
   | { id: number; kind: 'pockets'; atoms: Atom[]; options?: Omit<PocketOptions, 'signal'> }
-  | { id: number; kind: SurfaceKind; stream: true; atoms: Atom[]; options?: Omit<StreamOptions, 'signal'> };
+  | { id: number; kind: SurfaceKind; stream: true; atoms: Atom[]; options?: Omit<StreamOptions, 'signal'> }
+  | { id: number; kind: 'pocket-meshes'; sets: { index: number; atoms: Atom[] }[] };
 
 export interface PocketMessage {
   positions: ArrayBuffer;
@@ -34,7 +35,7 @@ export type SurfaceResponse =
       atomIndex?: ArrayBuffer;
     }
   | { id: number; ok: true; pockets: PocketMessage[] }
-  | { id: number; chunk: { positions: ArrayBuffer; normals: ArrayBuffer; indices: ArrayBuffer } }
+  | { id: number; chunk: { positions: ArrayBuffer; normals: ArrayBuffer; indices: ArrayBuffer }; index?: number }
   | { id: number; ok: true; done: true }
   | { id: number; ok: false; error: string };
 
@@ -47,6 +48,15 @@ async function handle(req: SurfaceRequest): Promise<void> {
         const chunk = { positions: c.positions.buffer as ArrayBuffer, normals: c.normals.buffer as ArrayBuffer, indices: c.indices.buffer as ArrayBuffer };
         scope.postMessage({ id: req.id, chunk } satisfies SurfaceResponse, [chunk.positions, chunk.normals, chunk.indices]);
       });
+      scope.postMessage({ id: req.id, ok: true, done: true } satisfies SurfaceResponse);
+      return;
+    }
+    if (req.kind === 'pocket-meshes') {
+      for (const { index, atoms } of req.sets) {
+        const m = pocketSurface(atoms);
+        const chunk = { positions: m.positions.buffer as ArrayBuffer, normals: m.normals.buffer as ArrayBuffer, indices: (m.indices ?? new Uint32Array(0)).buffer as ArrayBuffer };
+        scope.postMessage({ id: req.id, chunk, index } satisfies SurfaceResponse, [chunk.positions, chunk.normals, chunk.indices]);
+      }
       scope.postMessage({ id: req.id, ok: true, done: true } satisfies SurfaceResponse);
       return;
     }
