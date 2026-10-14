@@ -3,7 +3,7 @@ import { Suspense, useCallback, useMemo, useState, useEffect, useRef, type React
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import { loadStatusText } from "../lib/loadStatusText";
-import { useRendererControls, DEFAULT_BACKGROUND, RENDER_RESOLUTIONS, type ControlWindow } from "../lib/hooks/useRendererControls";
+import { useRendererControls, DEFAULT_BACKGROUND, RENDER_RESOLUTIONS, RENDER_DEFAULTS, type ControlWindow, type RenderSettings, type SurfaceColoring } from "../lib/hooks/useRendererControls";
 import { useTheme } from "../lib/hooks/useTheme";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
@@ -11,6 +11,7 @@ import { useFilteredScene, findInteractions } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
 import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef, SwapMolecule, PathTraceApi, PathTraceProgress } from "mol-renderer";
 import { RenderPreview } from "./ui/RenderPreview";
+import { RenderSettings as RenderSettingsPanel } from "./ui/RenderSettings";
 import { SurfaceStreamClient, type Atom } from "chem-surface";
 import type { Camera } from "three";
 import SurfaceWorker from "chem-surface/worker?worker";
@@ -59,12 +60,11 @@ const LEVA_THEME = {
   },
 };
 
-type WindowId = "parsing" | "surface" | "styling" | "render" | "debug";
+type WindowId = "parsing" | "surface" | "styling" | "debug";
 const WINDOWS: { id: WindowId; label: string }[] = [
   { id: "parsing", label: "Parsing" },
   { id: "surface", label: "Surface" },
   { id: "styling", label: "Styling" },
-  { id: "render", label: "Render" },
   { id: "debug", label: "Debug" },
 ];
 
@@ -80,7 +80,9 @@ export function MainView() {
   }, [pending, source.url]);
 
   const { theme, toggle: toggleThemeOnly } = useTheme();
-  const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface, labels, render } = useRendererControls(theme);
+  const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface, labels } = useRendererControls(theme);
+  const [surfaceColor, setSurfaceColor] = usePersistentState<SurfaceColoring>("mol-viewer:surface-color", "uniform");
+  const [render, setRender] = usePersistentState<RenderSettings>("mol-viewer:render", RENDER_DEFAULTS);
   // A background still at the other theme's default follows the theme; a custom one stays. On a toggle
   // this happens in the same update as the theme; the effect covers OS theme changes.
   const toggleTheme = () => toggleThemeOnly((next) => {
@@ -102,7 +104,7 @@ export function MainView() {
   const toggleLigand = useCallback((l: LigandRef) => setLigand((cur) => (cur?.label === l.label ? null : l)), []);
   useEffect(() => { setLigand(null); }, [source.url]);
   const [open, setOpen] = usePersistentState<Record<WindowId, boolean>>("mol-viewer:windows", {
-    parsing: false, surface: false, styling: false, render: false, debug: true,
+    parsing: false, surface: false, styling: false, debug: true,
   });
   const toggleWindow = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id as WindowId] }));
 
@@ -159,6 +161,7 @@ export function MainView() {
   const pathTraceRef = useRef<PathTraceApi | null>(null);
   const [renderJob, setRenderJob] = useState<{ cancel: () => void; listeners: Set<(p: PathTraceProgress) => void>; last: PathTraceProgress | null; fileName: string } | null>(null);
   const [rendering, setRendering] = useState(false);
+  const [renderSettingsOpen, setRenderSettingsOpen] = useState(false);
   const startRender = () => {
     const api = pathTraceRef.current;
     if (!api || rendering) return;
@@ -263,7 +266,7 @@ export function MainView() {
   // With the surface on, pockets are painted on it (their lining atoms' patches) rather than drawn over it
   const surfaceShowsPockets = surfaceOn && !!surfaceData?.length && !!pockets?.length;
   // Per surface atom: hydrophobicity when chosen, with pocket patches over it
-  const hydrophobic = surfaceOn && surface.color === "hydrophobicity";
+  const hydrophobic = surfaceOn && surfaceColor === "hydrophobicity";
   const surfaceAtomColors = useMemo(() => {
     if ((!surfaceShowsPockets || !pockets) && !hydrophobic) return null;
     const out = new Float32Array(surfaceAtomScene.length * 3).fill(-1);
@@ -332,7 +335,7 @@ export function MainView() {
             surfaceOpacity={surface.opacity}
             pockets={surfaceShowsPockets ? null : pockets}
             surfaceAtomColors={surfaceAtomColors}
-            surfacePotentialRange={surface.color === "electrostatics" ? POTENTIAL_RANGE : null}
+            surfacePotentialRange={surfaceColor === "electrostatics" ? POTENTIAL_RANGE : null}
             onLigandClick={toggleLigand}
             interactions={interactions}
             siteLigand={ligand}
@@ -356,8 +359,6 @@ export function MainView() {
         onToggleMenu={toggleWindow}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onRender={startRender}
-        rendering={rendering}
       />
 
       <SideColumn
@@ -378,12 +379,23 @@ export function MainView() {
         pockets={pocketsOn}
         onPockets={setPocketsOn}
         pocketCount={pockets?.length}
+        surfaceColor={surfaceColor}
+        onSurfaceColor={setSurfaceColor}
+        render={render}
+        onRender={setRender}
+        onStartRender={startRender}
+        onRenderSettings={() => setRenderSettingsOpen((o) => !o)}
+        rendering={rendering}
       />
 
       {levaWindow("parsing", "Parsing", 0)}
       {levaWindow("surface", "Surface", 1)}
       {levaWindow("styling", "Styling", 2)}
-      {levaWindow("render", "Render", 3)}
+      {renderSettingsOpen && (
+        <FloatingWindow id="render-settings" title="Render settings" width={260} defaultPosition={{ x: window.innerWidth - 720, y: window.innerHeight - 300 }} onClose={() => setRenderSettingsOpen(false)} onReset={() => setRender(RENDER_DEFAULTS)}>
+          <RenderSettingsPanel value={render} onChange={setRender} />
+        </FloatingWindow>
+      )}
       {renderJob && (
         <FloatingWindow id="render-preview" title="Render" width={420} resizable defaultPosition={{ x: window.innerWidth - 440, y: window.innerHeight - 380 }} onClose={closeRender}>
           <RenderJobPreview job={renderJob} onCancel={closeRender} />

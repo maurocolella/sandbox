@@ -1,11 +1,14 @@
 /*
  Title: SideColumn
  Description: PyMOL-style object column floating over the canvas below the top bar: the loaded object and
- its chains, plus the everyday display toggles. Resizable by its inner edge, switchable between the left and
+ its chains, the everyday display toggles, surface colouring, and path-traced renders: resolution, samples,
+ a button for the advanced settings, and the camera that starts one (disabled while it runs). Resizable by its inner edge, switchable between the left and
  right side, collapsible; the layout is remembered.
 */
 import { useRef, type ReactNode } from "react";
+import { Camera, SlidersHorizontal } from "lucide-react";
 import { usePersistentState } from "../../lib/hooks/usePersistentState";
+import { RENDER_RESOLUTIONS, RENDER_SAMPLES, type RenderResolution, type RenderSettings, type SurfaceColoring } from "../../lib/hooks/useRendererControls";
 import { FROST } from "./frost";
 
 export type Representation = "spheres" | "ribbon-tube" | "ribbon-flat";
@@ -30,6 +33,14 @@ export interface SideColumnProps {
   onPockets: (on: boolean) => void;
   /** Pockets found, once computed. */
   pocketCount?: number;
+  surfaceColor: SurfaceColoring;
+  onSurfaceColor: (c: SurfaceColoring) => void;
+  render: RenderSettings;
+  onRender: (r: RenderSettings) => void;
+  onStartRender: () => void;
+  /** Opens the advanced render settings. */
+  onRenderSettings: () => void;
+  rendering: boolean;
 }
 
 const MIN_WIDTH = 200, MAX_WIDTH = 480;
@@ -64,6 +75,22 @@ function Toggle({ label, checked, disabled, onChange }: { label: string; checked
     <label className={`flex items-center justify-between py-0.5 text-sm ${disabled ? "opacity-40" : ""}`}>
       <span>{label}</span>
       <input type="checkbox" className="h-4 w-4 accent-(--ui-fg)" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+    </label>
+  );
+}
+
+function Select<T extends string | number>({ label, value, options, disabled, onChange }: { label: string; value: T; options: { value: T; label: string }[]; disabled?: boolean; onChange: (v: T) => void }) {
+  return (
+    <label className={`flex items-center justify-between gap-2 py-0.5 text-sm ${disabled ? "opacity-40" : ""}`}>
+      <span>{label}</span>
+      <select
+        value={String(value)}
+        disabled={disabled}
+        onChange={(e) => onChange(options.find((o) => String(o.value) === e.target.value)!.value)}
+        className="rounded bg-(--ui-input) px-1.5 py-0.5 text-xs text-(--ui-strong) outline-none"
+      >
+        {options.map((o) => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
+      </select>
     </label>
   );
 }
@@ -155,6 +182,42 @@ export function SideColumn(props: SideColumnProps) {
             <Section title="Surface">
               <Toggle label="Show surface" checked={props.surface} onChange={props.onSurface} />
               <Toggle label={props.pockets && props.pocketCount !== undefined ? `Pockets (${props.pocketCount})` : "Pockets"} checked={props.pockets} onChange={props.onPockets} />
+              <Select
+                label="Color"
+                value={props.surfaceColor}
+                disabled={!props.surface}
+                onChange={props.onSurfaceColor}
+                options={[{ value: "uniform", label: "Uniform" }, { value: "electrostatics", label: "Electrostatics" }, { value: "hydrophobicity", label: "Hydrophobicity" }]}
+              />
+            </Section>
+            <Section title="Render">
+              <Segmented<RenderResolution>
+                value={props.render.resolution}
+                onChange={(resolution) => props.onRender({ ...props.render, resolution })}
+                options={(Object.keys(RENDER_RESOLUTIONS) as RenderResolution[]).map((r) => ({ value: r, label: r }))}
+              />
+              <div className="mt-2 flex items-center gap-1">
+                <div className="flex-1">
+                  <Select label="Samples" value={props.render.samples} onChange={(samples) => props.onRender({ ...props.render, samples })} options={RENDER_SAMPLES.map((n) => ({ value: n, label: String(n) }))} />
+                </div>
+                <button
+                  onClick={props.onRenderSettings}
+                  title="More render settings"
+                  aria-label="More render settings"
+                  className="rounded-md p-1.5 text-(--ui-fg) transition-colors hover:bg-(--ui-hover)"
+                >
+                  <SlidersHorizontal size={16} />
+                </button>
+                <button
+                  onClick={props.onStartRender}
+                  disabled={props.rendering}
+                  title={props.rendering ? "Rendering…" : "Render image (path traced)"}
+                  aria-label="Render image"
+                  className="rounded-md p-1.5 text-(--ui-fg) transition-colors hover:bg-(--ui-hover) disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
+                >
+                  <Camera size={16} />
+                </button>
+              </div>
             </Section>
           </div>
           {/* Inner edge: drag to resize */}

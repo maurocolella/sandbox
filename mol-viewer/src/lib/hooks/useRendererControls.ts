@@ -11,15 +11,17 @@ import type { ParseOptions } from "pdb-parser";
 import type { Theme } from "./useTheme";
 
 type Store = ReturnType<typeof useCreateStore>;
-export type ControlWindow = "parsing" | "surface" | "styling" | "render";
+export type ControlWindow = "parsing" | "surface" | "styling";
 
 const PARSING_DEFAULTS = { altLocPolicy: "occupancy", bondPolicy: "conect+heuristic", useModelSelection: false, modelSelection: 1 };
-const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, color: "uniform", wireframe: false, opacity: 1 };
+const SURFACE_DEFAULTS = { kind: "ses", probeRadius: 1.4, voxelSize: 0.5, wireframe: false, opacity: 1 };
 export type SurfaceColoring = "uniform" | "electrostatics" | "hydrophobicity";
 // Render widths; the height follows the view's aspect
 export const RENDER_RESOLUTIONS = { "1K": 1024, "2K": 2048, "4K": 4096 } as const;
 export type RenderResolution = keyof typeof RENDER_RESOLUTIONS;
-const RENDER_DEFAULTS = { resolution: "2K" as RenderResolution, samples: 256, ligandFocus: 0.5, depthOfField: 0.3, fog: 0.2 };
+export const RENDER_SAMPLES = [64, 128, 256, 512, 1024] as const;
+export interface RenderSettings { resolution: RenderResolution; samples: number; ligandFocus: number; depthOfField: number; fog: number }
+export const RENDER_DEFAULTS: RenderSettings = { resolution: "2K", samples: 256, ligandFocus: 0.5, depthOfField: 0.3, fog: 0.2 };
 export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
 const stylingDefaults = (theme: Theme) => ({
   background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true,
@@ -40,7 +42,6 @@ export interface RendererControls {
     kind: "vdw" | "sas" | "ses";
     probeRadius: number;
     voxelSize: number;
-    color: SurfaceColoring;
     wireframe: boolean;
     opacity: number;
   };
@@ -49,8 +50,6 @@ export interface RendererControls {
   selection: { hoverTint: string; onTopHighlight: boolean };
   /** Binding-site labels: opacity of the farthest, and whether non-interacting residues are labelled. */
   labels: { farOpacity: number; allResidues: boolean };
-  /** Path-traced render settings. */
-  render: { resolution: RenderResolution; samples: number; ligandFocus: number; depthOfField: number; fog: number };
 }
 
 export function useRendererControls(theme: Theme): RendererControls {
@@ -58,7 +57,6 @@ export function useRendererControls(theme: Theme): RendererControls {
     parsing: useCreateStore(),
     surface: useCreateStore(),
     styling: useCreateStore(),
-    render: useCreateStore(),
   };
 
   // Function schemas, for their setters (used by reset)
@@ -76,7 +74,6 @@ export function useRendererControls(theme: Theme): RendererControls {
     kind: { value: SURFACE_DEFAULTS.kind, options: ["vdw", "sas", "ses"] },
     probeRadius: { value: SURFACE_DEFAULTS.probeRadius, min: 0.5, max: 3.0, step: 0.1 },
     voxelSize: { value: SURFACE_DEFAULTS.voxelSize, min: 0.25, max: 2.0, step: 0.05 },
-    color: { value: SURFACE_DEFAULTS.color, options: ["uniform", "electrostatics", "hydrophobicity"] as SurfaceColoring[] },
     wireframe: { value: SURFACE_DEFAULTS.wireframe },
     opacity: { value: SURFACE_DEFAULTS.opacity, min: 0.05, max: 1, step: 0.05 },
   }), { store: stores.surface });
@@ -94,21 +91,12 @@ export function useRendererControls(theme: Theme): RendererControls {
     }),
   }), { store: stores.styling });
 
-  const [render, setRender] = useControls(() => ({
-    resolution: { value: RENDER_DEFAULTS.resolution, options: Object.keys(RENDER_RESOLUTIONS) as RenderResolution[] },
-    samples: { value: RENDER_DEFAULTS.samples, options: [64, 128, 256, 512, 1024] },
-    ligandFocus: { value: RENDER_DEFAULTS.ligandFocus, min: 0, max: 1, step: 0.05, label: "ligand focus" },
-    depthOfField: { value: RENDER_DEFAULTS.depthOfField, min: 0, max: 1, step: 0.05, label: "depth of field" },
-    fog: { value: RENDER_DEFAULTS.fog, min: 0, max: 1, step: 0.05, label: "depth fog" },
-  }), { store: stores.render });
-
   return {
     stores,
     reset: {
       parsing: () => setParsing(PARSING_DEFAULTS),
       surface: () => setSurface(SURFACE_DEFAULTS),
       styling: () => setStyling(stylingDefaults(theme)),
-      render: () => setRender(RENDER_DEFAULTS),
     },
     setBackground: (background: string) => setStyling({ background }),
     parseOpts: {
@@ -121,7 +109,6 @@ export function useRendererControls(theme: Theme): RendererControls {
       kind: surface.kind as "vdw" | "sas" | "ses",
       probeRadius: Number(surface.probeRadius),
       voxelSize: Number(surface.voxelSize),
-      color: surface.color as SurfaceColoring,
       wireframe: Boolean(surface.wireframe),
       opacity: Number(surface.opacity),
     },
@@ -129,6 +116,5 @@ export function useRendererControls(theme: Theme): RendererControls {
     spheres: { radiusScale: Number(styling.radiusScale) },
     selection: { hoverTint: String(styling.hoverTint), onTopHighlight: Boolean(styling.onTopHighlight) },
     labels: { farOpacity: Number(styling.farOpacity), allResidues: Boolean(styling.labelAllResidues) },
-    render: { resolution: render.resolution as RenderResolution, samples: Number(render.samples), ligandFocus: Number(render.ligandFocus), depthOfField: Number(render.depthOfField), fog: Number(render.fog) },
   };
 }
