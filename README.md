@@ -2,6 +2,8 @@
 
 This repository hosts multiple, loosely coupled sub-projects used for molecular data parsing and visualization.
 
+What's planned next: [ROADMAP.md](ROADMAP.md).
+
 ## Sub-projects
 
 - **pdb-parser**
