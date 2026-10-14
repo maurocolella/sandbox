@@ -184,6 +184,7 @@ export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null, 
     }
     if (latest.current !== shownRef.current) disposeShown(latest.current);
     const next: Shown = { first: chunks[0]!, group: new THREE.Group(), chunks: [] };
+    next.group.userData.ptRole = "surface";
     latest.current = next;
     add(next, 0);
     // Compile off the critical path (parallel where the driver supports it), then swap

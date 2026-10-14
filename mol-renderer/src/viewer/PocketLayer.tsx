@@ -43,7 +43,7 @@ const dispose = (ms: THREE.Mesh[]) => {
 /** Pockets may stream in: only pockets not drawn yet are built. */
 export function PocketLayer({ pockets }: { pockets: PocketMesh[] | null }) {
   const invalidate = useThree((s) => s.invalidate);
-  const group = useMemo(() => new THREE.Group(), []);
+  const group = useMemo(() => Object.assign(new THREE.Group(), { userData: { ptRole: "pocket" } }), []);
   const built = useRef(new Map<PocketMesh, THREE.Mesh[]>());
 
   useEffect(() => {

@@ -108,6 +108,7 @@ export function BindingSiteLayer({ scene, ligand, interacting, farOpacity = 0, l
     const sticks = buildBondSticks({ positions, bonds, order, aromatic, radius: RADIUS, color: (k, out) => colorOf(atoms[k]!, out), radialSegments: 10 });
     if (sticks) group.add(sticks);
     group.traverse((o) => { o.raycast = () => {}; });
+    group.userData.ptRole = "site";
     return { group, labels };
   }, [scene, ligand]);
 

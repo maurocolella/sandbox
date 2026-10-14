@@ -8,7 +8,7 @@ import { Suspense, useEffect, useRef, useCallback, useMemo } from "react";
 import { Canvas, invalidate, useThree } from "@react-three/fiber";
 import { OrbitControls, AdaptiveDpr, Preload, StatsGl } from "@react-three/drei";
 import type { MolScene } from "pdb-parser";
-import { Color, type Camera } from "three";
+import { Color, type Camera, type Group } from "three";
 import { useFilteredScene } from "../lib/hooks/useFilteredScene";
 import { useCameraFrameOnScene, type ControlsRef } from "../lib/hooks/useCameraFrameOnScene";
 import { useSelectionLookups } from "../lib/hooks/useSelectionLookups";
@@ -30,6 +30,7 @@ import type { Interaction } from "../lib/interactions";
 import { CameraLights } from "./CameraLights";
 import { RenderStats, type RenderStatsInfo } from "./RenderStats";
 import { InstancesLod } from "./InstancesLod";
+import { PathTraceHost, type PathTraceApi } from "./PathTraceHost";
 
 interface MoleculeRenderProps {
   background: string;
@@ -40,6 +41,8 @@ interface MoleculeRenderProps {
   surfaceData?: SurfaceData[] | null; // chunks; kept on screen until a replacement's first chunk is ready
   /** Set to the scene camera (e.g. to stream surfaces nearest the viewer first). */
   cameraRef?: React.MutableRefObject<Camera | null>;
+  /** Set to the path-traced render API (see PathTraceHost). */
+  pathTraceRef?: React.MutableRefObject<PathTraceApi | null>;
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
   /** Linear RGB per surface input atom (r < 0: the default colour); vertices take their nearest atom's. */
@@ -148,6 +151,10 @@ export function MoleculeRender(props: MoleculeRenderProps) {
   }, [objects.backbone]);
 
   const controlsRef = useRef<ControlsRef | null>(null);
+  const rootRef = useRef<Group>(null);
+  // What path-traced renders draw as spheres: atoms, when shown as such
+  const pathTraceAtoms = useMemo(() => (showSphereAtoms ? { radiusScale: props.renderControls.radiusScale } : null), [showSphereAtoms, props.renderControls.radiusScale]);
+  if (ribbonGroup) ribbonGroup.userData.ptRole = "cartoon";
   // Camera frame hook on ORIGINAL scene (decoupled from chain visibility)
   useCameraFrameOnScene(props.scene as MolScene | null, controlsRef.current, false);
 
@@ -162,6 +169,16 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <color attach="background" args={[props.background]} />
       <CameraLights />
       {props.cameraRef && <ExposeCamera target={props.cameraRef} />}
+      {props.pathTraceRef && (
+        <PathTraceHost
+          apiRef={props.pathTraceRef}
+          root={rootRef}
+          scene={filteredScene}
+          atoms={pathTraceAtoms}
+          bonds={props.renderControls.showBonds}
+          focusLigand={props.siteLigand ?? null}
+        />
+      )}
       {props.stats && <StatsGl className={props.stats.className} parent={props.stats.parent} clearStatsGlStyle={!!props.stats.parent} trackGPU minimal />}
       {props.onRenderStats && <RenderStats onStats={props.onRenderStats} />}
       <OrbitControls
@@ -183,7 +200,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <AdaptiveDpr pixelated />
       <Preload all />
       <Suspense fallback={null}>
-        <group>
+        <group ref={rootRef}>
           <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} atomColors={props.surfaceAtomColors ?? null} potentialRange={props.surfacePotentialRange ?? null} />
           <PocketLayer pockets={props.pockets ?? null} />
           <InteractionLayer interactions={props.interactions ?? null} />

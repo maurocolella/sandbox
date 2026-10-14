@@ -3,13 +3,14 @@ import { Suspense, useCallback, useMemo, useState, useEffect, useRef, type React
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
 import { loadStatusText } from "../lib/loadStatusText";
-import { useRendererControls, DEFAULT_BACKGROUND, type ControlWindow } from "../lib/hooks/useRendererControls";
+import { useRendererControls, DEFAULT_BACKGROUND, RENDER_RESOLUTIONS, type ControlWindow } from "../lib/hooks/useRendererControls";
 import { useTheme } from "../lib/hooks/useTheme";
 import { useChainSelection } from "../lib/hooks/useChainSelection";
 import { usePersistentState } from "../lib/hooks/usePersistentState";
 import { useFilteredScene, findInteractions } from "mol-renderer";
 import { MoleculeRender } from "mol-renderer";
-import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef, SwapMolecule } from "mol-renderer";
+import type { RenderControls, OverlayControls, SurfaceData, RenderStatsInfo, SceneBuildStatus, PocketMesh, LigandRef, SwapMolecule, PathTraceApi, PathTraceProgress } from "mol-renderer";
+import { RenderPreview } from "./ui/RenderPreview";
 import { SurfaceStreamClient, type Atom } from "chem-surface";
 import type { Camera } from "three";
 import SurfaceWorker from "chem-surface/worker?worker";
@@ -58,11 +59,12 @@ const LEVA_THEME = {
   },
 };
 
-type WindowId = "parsing" | "surface" | "styling" | "debug";
+type WindowId = "parsing" | "surface" | "styling" | "render" | "debug";
 const WINDOWS: { id: WindowId; label: string }[] = [
   { id: "parsing", label: "Parsing" },
   { id: "surface", label: "Surface" },
   { id: "styling", label: "Styling" },
+  { id: "render", label: "Render" },
   { id: "debug", label: "Debug" },
 ];
 
@@ -78,7 +80,7 @@ export function MainView() {
   }, [pending, source.url]);
 
   const { theme, toggle: toggleThemeOnly } = useTheme();
-  const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface, labels } = useRendererControls(theme);
+  const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface, labels, render } = useRendererControls(theme);
   // A background still at the other theme's default follows the theme; a custom one stays. On a toggle
   // this happens in the same update as the theme; the effect covers OS theme changes.
   const toggleTheme = () => toggleThemeOnly((next) => {
@@ -100,7 +102,7 @@ export function MainView() {
   const toggleLigand = useCallback((l: LigandRef) => setLigand((cur) => (cur?.label === l.label ? null : l)), []);
   useEffect(() => { setLigand(null); }, [source.url]);
   const [open, setOpen] = usePersistentState<Record<WindowId, boolean>>("mol-viewer:windows", {
-    parsing: false, surface: false, styling: false, debug: true,
+    parsing: false, surface: false, styling: false, render: false, debug: true,
   });
   const toggleWindow = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id as WindowId] }));
 
@@ -152,6 +154,28 @@ export function MainView() {
   const [surfaceData, setSurfaceData] = useState<SurfaceData[] | null>(null);
   const [renderStats, setRenderStats] = useState<RenderStatsInfo | null>(null);
   const cameraRef = useRef<Camera | null>(null);
+
+  // Path-traced render: progress goes straight to the preview (not through this component, at every sample)
+  const pathTraceRef = useRef<PathTraceApi | null>(null);
+  const [renderJob, setRenderJob] = useState<{ cancel: () => void; listeners: Set<(p: PathTraceProgress) => void>; last: PathTraceProgress | null; fileName: string } | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const startRender = () => {
+    const api = pathTraceRef.current;
+    if (!api || rendering) return;
+    renderJob?.cancel();
+    const job = { cancel: () => {}, listeners: new Set<(p: PathTraceProgress) => void>(), last: null as PathTraceProgress | null, fileName: `${scene?.metadata?.pdbId ?? "render"}-${render.resolution}.png` };
+    setRendering(true);
+    job.cancel = api.start(
+      { width: RENDER_RESOLUTIONS[render.resolution], samples: render.samples, emphasis: render.ligandFocus, depthOfField: render.depthOfField, fog: render.fog, background: style.background },
+      (p) => {
+        job.last = p;
+        job.listeners.forEach((l) => l(p));
+        if (p.stage === "done") setRendering(false);
+      },
+    );
+    setRenderJob(job);
+  };
+  const closeRender = () => { renderJob?.cancel(); setRenderJob(null); setRendering(false); };
   // Surfaces stream in from a pool of workers; a new request supersedes (terminates) the one in flight
   const surfaceClient = useRef<SurfaceStreamClient | null>(null);
   useEffect(() => {
@@ -303,6 +327,7 @@ export function MainView() {
             visibleChains={selectedChainIndices}
             surfaceData={surfaceData}
             cameraRef={cameraRef}
+            pathTraceRef={pathTraceRef}
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
             pockets={surfaceShowsPockets ? null : pockets}
@@ -331,6 +356,8 @@ export function MainView() {
         onToggleMenu={toggleWindow}
         theme={theme}
         onToggleTheme={toggleTheme}
+        onRender={startRender}
+        rendering={rendering}
       />
 
       <SideColumn
@@ -356,6 +383,12 @@ export function MainView() {
       {levaWindow("parsing", "Parsing", 0)}
       {levaWindow("surface", "Surface", 1)}
       {levaWindow("styling", "Styling", 2)}
+      {levaWindow("render", "Render", 3)}
+      {renderJob && (
+        <FloatingWindow id="render-preview" title="Render" width={420} resizable defaultPosition={{ x: window.innerWidth - 440, y: window.innerHeight - 380 }} onClose={closeRender}>
+          <RenderJobPreview job={renderJob} onCancel={closeRender} />
+        </FloatingWindow>
+      )}
       {ligand && (
         <FloatingWindow id="ligand" title={`Ligand · ${ligand.label}`} width={440} resizable defaultPosition={{ x: window.innerWidth - 660, y: 68 }} onClose={() => setLigand(null)}>
           <LigandCard
@@ -388,4 +421,14 @@ export function MainView() {
       )}
     </div>
   );
+}
+
+/** Subscribes to a render job's progress, so only the preview re-renders at every sample. */
+function RenderJobPreview({ job, onCancel }: { job: { listeners: Set<(p: PathTraceProgress) => void>; last: PathTraceProgress | null; fileName: string }; onCancel: () => void }) {
+  const [progress, setProgress] = useState(job.last);
+  useEffect(() => {
+    job.listeners.add(setProgress);
+    return () => { job.listeners.delete(setProgress); };
+  }, [job]);
+  return progress ? <RenderPreview progress={progress} onCancel={onCancel} fileName={job.fileName} /> : null;
 }

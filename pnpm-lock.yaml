@@ -76,6 +76,12 @@ importers:
       three:
         specifier: ^0.160.0
         version: 0.160.1
+      three-gpu-pathtracer:
+        specifier: 0.0.23
+        version: 0.0.23(three-mesh-bvh@0.7.8(three@0.160.1))(three@0.160.1)(xatlas-web@0.1.0)
+      three-mesh-bvh:
+        specifier: 0.7.8
+        version: 0.7.8(three@0.160.1)
     devDependencies:
       '@eslint/js':
         specifier: ^9.35.0
@@ -2155,6 +2161,13 @@ packages:
     engines: {node: '>=18'}
     deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
+  three-gpu-pathtracer@0.0.23:
+    resolution: {integrity: sha512-CjMX5YU3ajDklOv3hW1EQ4CCkPLiLR+jB31w6G5WLf6Nasemib62tmCj45vBK5ItKAD0aHG1NWc479gXzk6fOQ==}
+    peerDependencies:
+      three: '>=0.151.0'
+      three-mesh-bvh: '>=0.7.4'
+      xatlas-web: ^0.1.0
+
   three-mesh-bvh@0.7.8:
     resolution: {integrity: sha512-BGEZTOIC14U0XIRw3tO4jY7IjP7n7v24nv9JXS1CyeVRWOCkcOMhRnmENUjuV39gktAw4Ofhr0OvIAiTspQrrw==}
     deprecated: Deprecated due to three.js version incompatibility. Please use v0.8.0, instead.
@@ -2389,6 +2402,9 @@ packages:
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
+
+  xatlas-web@0.1.0:
+    resolution: {integrity: sha512-PprVfuXbaIskxLTLBUQRaWfgSy9xUQqAMIRooOw0P6NYqwgh6T0voeer6+Z5M7AFt5SGXUybuww/uDGs1yw8vQ==}
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
@@ -4319,6 +4335,12 @@ snapshots:
       minizlib: 3.1.0
       yallist: 5.0.0
 
+  three-gpu-pathtracer@0.0.23(three-mesh-bvh@0.7.8(three@0.160.1))(three@0.160.1)(xatlas-web@0.1.0):
+    dependencies:
+      three: 0.160.1
+      three-mesh-bvh: 0.7.8(three@0.160.1)
+      xatlas-web: 0.1.0
+
   three-mesh-bvh@0.7.8(three@0.160.1):
     dependencies:
       three: 0.160.1
@@ -4515,6 +4537,8 @@ snapshots:
       stackback: 0.0.2
 
   word-wrap@1.2.5: {}
+
+  xatlas-web@0.1.0: {}
 
   yallist@3.1.1: {}
 

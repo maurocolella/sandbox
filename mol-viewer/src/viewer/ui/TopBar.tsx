@@ -2,9 +2,9 @@
  Title: TopBar
  Description: Frosted bar across the top of the canvas: the structure source field, the loaded entry's
  title (ellipsised, in full on hover), the menu toggles that open the floating windows, and the light/dark
- theme toggle.
+ theme toggle, and the camera button that starts a path-traced render (disabled while one runs).
 */
-import { Moon, Sun } from "lucide-react";
+import { Camera, Moon, Sun } from "lucide-react";
 import { FROST } from "./frost";
 
 export interface TopBarMenu { id: string; label: string; open: boolean }
@@ -20,6 +20,8 @@ export interface TopBarProps {
   onToggleMenu: (id: string) => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onRender?: () => void;
+  rendering?: boolean;
 }
 
 export function TopBar(props: TopBarProps) {
@@ -50,6 +52,17 @@ export function TopBar(props: TopBarProps) {
           </button>
         ))}
         <span className="mx-1 w-px self-stretch bg-(--ui-border)" />
+        {props.onRender && (
+          <button
+            onClick={props.onRender}
+            disabled={props.rendering}
+            className="rounded-md px-2 py-1 text-(--ui-fg) transition-colors hover:bg-(--ui-hover) disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
+            title={props.rendering ? "Rendering…" : "Render image (path traced)"}
+            aria-label="Render image"
+          >
+            <Camera size={16} />
+          </button>
+        )}
         <button
           onClick={props.onToggleTheme}
           className="rounded-md px-2 py-1 text-(--ui-fg) transition-colors hover:bg-(--ui-hover)"

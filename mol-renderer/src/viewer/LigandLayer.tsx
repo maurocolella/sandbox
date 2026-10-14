@@ -91,6 +91,7 @@ export function LigandLayer({ scene, radiusScale, onLigandClick }: { scene: MolS
         return E?.[i] === 6 || !C ? out.copy(CARBON) : out.setRGB(C[i * 3]! / 255, C[i * 3 + 1]! / 255, C[i * 3 + 2]! / 255);
       },
     });
+    group.userData.ptRole = "ligand";
     return { group, balls, ligandOf, ligands };
   }, [scene, radiusScale]);
 

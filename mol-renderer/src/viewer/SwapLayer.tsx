@@ -37,6 +37,7 @@ export function SwapLayer({ molecule, radiusScale }: { molecule: SwapMolecule | 
       },
     });
     group.traverse((o) => { o.raycast = () => {}; });
+    group.userData.ptRole = "swap";
     return group;
   }, [molecule, radiusScale]);
 

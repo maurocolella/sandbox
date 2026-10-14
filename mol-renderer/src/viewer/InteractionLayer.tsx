@@ -25,6 +25,7 @@ export function InteractionLayer({ interactions }: { interactions: Interaction[]
   const invalidate = useThree((s) => s.invalidate);
   const group = useMemo(() => {
     const g = new THREE.Group();
+    g.userData.ptRole = "interaction";
     // Dashes per type: [from, to] pairs
     const byType = new Map<InteractionType, [THREE.Vector3, THREE.Vector3][]>();
     for (const it of interactions ?? []) {

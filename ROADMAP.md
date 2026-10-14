@@ -71,7 +71,7 @@ From an external review.
 
 ## 6. Rendering
 
-- [ ] **Path tracing.** Publication-quality renders (soft shadows, ambient occlusion, global illumination) computed on the viewer's GPU in an offscreen buffer, so the interactive view stays responsive. While it converges, the image in progress shows as a thumbnail that refines over time; the finished render can be viewed or saved.
+- [x] **Path tracing.** Publication-quality renders (soft shadows, ambient occlusion, global illumination) computed on the viewer's GPU in an offscreen buffer, so the interactive view stays responsive. While it converges, the image in progress shows as a thumbnail that refines over time; the finished render can be viewed or saved.
 
 ## 7. Viewer fixes
 
