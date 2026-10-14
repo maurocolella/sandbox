@@ -42,6 +42,8 @@ interface MoleculeRenderProps {
   cameraRef?: React.MutableRefObject<Camera | null>;
   surfaceWireframe?: boolean;
   surfaceOpacity?: number; // 0..1, 1 = opaque
+  /** Linear RGB per surface input atom (r < 0: the default colour); vertices take their nearest atom's. */
+  surfaceAtomColors?: Float32Array | null;
   /** A ligand swapped into a pocket, already placed. */
   swapMolecule?: SwapMolecule | null;
   /** Binding-site labels: opacity of the farthest, and whether non-interacting residues are labelled. */
@@ -180,7 +182,7 @@ export function MoleculeRender(props: MoleculeRenderProps) {
       <Preload all />
       <Suspense fallback={null}>
         <group>
-          <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} />
+          <SurfaceLayer data={props.surfaceData ?? null} wireframe={props.surfaceWireframe ?? false} opacity={props.surfaceOpacity ?? 1} atomColors={props.surfaceAtomColors ?? null} />
           <PocketLayer pockets={props.pockets ?? null} />
           <InteractionLayer interactions={props.interactions ?? null} />
           <BindingSiteLayer

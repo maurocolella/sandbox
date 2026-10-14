@@ -4,7 +4,7 @@
  streams in (appended chunks are added in place). Materials live for the component's lifetime (so shader
  programs are compiled once), a new surface is compiled asynchronously and swapped in only when ready (the
  previous one stays on screen meanwhile), and the wireframe is a visibility toggle over an edge index that
- shares the mesh's position buffer.
+ shares the mesh's position buffer. Optional per-atom colours paint the vertices nearest each atom.
  Transparency (PyMOL-style): a depth-only prepass of the surface, then the colour pass blended with
  depthFunc LessEqual, so only the front-most surface layer shows over what's behind it, free of the
  intra-mesh sorting artefacts a single transparent mesh would have. All surface passes sit in the
@@ -18,13 +18,19 @@ export interface SurfaceData {
   positions: Float32Array;
   normals: Float32Array;
   indices?: Uint32Array;
+  /** Per vertex, the atom it belongs to (indexes `atomColors`). */
+  atomIndex?: Uint32Array;
 }
+
+const BASE = new THREE.Color(0x77aaff);
 
 interface Built {
   group: THREE.Group;
   depth: THREE.Mesh;
   lines: THREE.LineSegments;
   geometries: THREE.BufferGeometry[];
+  data: SurfaceData;
+  color: THREE.BufferAttribute;
 }
 
 /** One surface: its chunks so far. */
@@ -50,11 +56,26 @@ function edgeIndex(indices: Uint32Array): Uint32Array {
   return out.slice(0, n);
 }
 
+/** Vertex colours: the atom's colour (linear RGB, 3 per atom), or the base colour where it has none (r < 0). */
+function paint(b: Built, atomColors: Float32Array | null) {
+  const out = b.color.array as Float32Array, ai = b.data.atomIndex;
+  for (let v = 0; v < out.length / 3; v++) {
+    const a = ai && atomColors ? ai[v]! * 3 : -1;
+    const own = a >= 0 && atomColors![a]! >= 0;
+    out[v * 3] = own ? atomColors![a]! : BASE.r;
+    out[v * 3 + 1] = own ? atomColors![a + 1]! : BASE.g;
+    out[v * 3 + 2] = own ? atomColors![a + 2]! : BASE.b;
+  }
+  b.color.needsUpdate = true;
+}
+
 function build(data: SurfaceData, mesh: THREE.Material, depthOnly: THREE.Material, line: THREE.Material): Built {
   const position = new THREE.BufferAttribute(data.positions, 3);
+  const color = new THREE.BufferAttribute(new Float32Array(data.positions.length), 3);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", position);
   g.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
+  g.setAttribute("color", color);
   if (data.indices) g.setIndex(new THREE.BufferAttribute(data.indices, 1));
   g.computeBoundingSphere();
 
@@ -71,12 +92,12 @@ function build(data: SurfaceData, mesh: THREE.Material, depthOnly: THREE.Materia
   lines.renderOrder = 3;
   const group = new THREE.Group();
   group.add(depth, m, lines);
-  return { group, depth, lines, geometries: [g, lg] };
+  return { group, depth, lines, geometries: [g, lg], data, color };
 }
 
 const disposeShown = (s: Shown | null) => s?.chunks.forEach((b) => b.geometries.forEach((g) => g.dispose()));
 
-export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceData[] | null; wireframe: boolean; opacity?: number }) {
+export function SurfaceLayer({ data, wireframe, opacity = 1, atomColors = null }: { data: SurfaceData[] | null; wireframe: boolean; opacity?: number; atomColors?: Float32Array | null }) {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const scene = useThree((s) => s.scene);
@@ -87,7 +108,7 @@ export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceDa
     const offset = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
     return {
       // A little sheen gives a silky rim without gloss. Always 'transparent' so toggling opacity never recompiles
-      mesh: new THREE.MeshPhysicalMaterial({ color: 0x77aaff, metalness: 0, roughness: 0.6, sheen: 0.35, sheenRoughness: 0.5, sheenColor: 0xffffff, transparent: true, depthFunc: THREE.LessEqualDepth, ...offset }),
+      mesh: new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0, roughness: 0.6, sheen: 0.35, sheenRoughness: 0.5, sheenColor: 0xffffff, transparent: true, depthFunc: THREE.LessEqualDepth, ...offset }),
       depth: new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true, depthWrite: true, ...offset }),
       line: new THREE.LineBasicMaterial({ color: 0x111111, depthWrite: false, transparent: true }),
     };
@@ -103,6 +124,8 @@ export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceDa
   wireframeRef.current = wireframe;
   const opacityRef = useRef(opacity);
   opacityRef.current = opacity;
+  const atomColorsRef = useRef(atomColors);
+  atomColorsRef.current = atomColors;
   const allChunks = () => [...new Set([shownRef.current, latest.current])].flatMap((s) => s?.chunks ?? []);
 
   useEffect(() => {
@@ -120,6 +143,7 @@ export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceDa
         const b = build(c, materials.mesh, materials.depth, materials.line);
         b.lines.visible = wireframeRef.current;
         b.depth.visible = opacityRef.current < 1;
+        paint(b, atomColorsRef.current);
         target.group.add(b.group);
         target.chunks.push(b);
       }
@@ -151,6 +175,11 @@ export function SurfaceLayer({ data, wireframe, opacity = 1 }: { data: SurfaceDa
     for (const b of allChunks()) b.lines.visible = wireframe;
     invalidate();
   }, [shown, wireframe, invalidate]);
+
+  useEffect(() => {
+    for (const b of allChunks()) paint(b, atomColors);
+    invalidate();
+  }, [shown, atomColors, invalidate]);
 
   // Opaque: single pass writing depth. Translucent: depth prepass + blended front-layer colour pass
   useEffect(() => {

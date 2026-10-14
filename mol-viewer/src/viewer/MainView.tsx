@@ -1,3 +1,4 @@
+import { Color } from "three";
 import { Suspense, useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from "react";
 import type { MolScene } from "pdb-parser";
 import { useMolScene } from "../lib/hooks/useMolScene";
@@ -156,11 +157,11 @@ export function MainView() {
   }, []);
 
   // Only while surfaces are on: one object per atom is too much heap for millions of atoms
-  const atomsInput = useMemo<Atom[]>(() => {
+  const { atomsInput, surfaceAtomScene } = useMemo(() => {
     const s = filteredScene;
     const n = s?.atoms?.count ?? 0;
-    if (!surfaceOn || !s || n === 0) return [];
-    const out: Atom[] = [];
+    if (!surfaceOn || !s || n === 0) return { atomsInput: [] as Atom[], surfaceAtomScene: new Int32Array(0) };
+    const out: Atom[] = [], sceneIndex: number[] = [];
     const pos = s.atoms.positions as Float32Array;
     const rad = s.atoms.radii as Float32Array;
     const residues = s.tables?.residues;
@@ -170,8 +171,9 @@ export function MainView() {
       if (residues && residueIndex && SOLVENT.has(residues[residueIndex[i]!]?.name ?? "")) continue;
       const j = i * 3;
       out.push({ x: pos[j], y: pos[j + 1], z: pos[j + 2], radius: rad[i] });
+      sceneIndex.push(i);
     }
-    return out;
+    return { atomsInput: out, surfaceAtomScene: Int32Array.from(sceneIndex) };
   }, [filteredScene, surfaceOn]);
 
   // Pockets: polymer atoms only, so ligand, water and ion sites show as pockets; own worker, so the
@@ -182,7 +184,8 @@ export function MainView() {
     pocketClient.current = client;
     return () => { client.dispose(); pocketClient.current = null; };
   }, []);
-  const [pockets, setPockets] = useState<PocketMesh[] | null>(null);
+  // index: best-first rank; lining: scene atom indices
+  const [pockets, setPockets] = useState<(PocketMesh & { index: number; lining: Int32Array })[] | null>(null);
   useEffect(() => {
     const client = pocketClient.current, s = filteredScene;
     if (!pocketsOn || !s || !client) { client?.cancel(); setPockets(null); return; }
@@ -190,19 +193,23 @@ export function MainView() {
     const polymer = new Uint8Array(s.tables?.residues?.length ?? 0);
     for (const seg of segments ?? []) for (let r = seg.startResidue; r <= seg.endResidue; r++) polymer[r] = 1;
     const pos = s.atoms.positions as Float32Array, rad = s.atoms.radii as Float32Array;
-    const atoms: Atom[] = [], groups: number[] = [];
+    const atoms: Atom[] = [], groups: number[] = [], sceneIndex: number[] = [];
     for (let i = 0; i < s.atoms.count; i++) {
       if (segments && residueIndex && !polymer[residueIndex[i]!]) continue;
       atoms.push({ x: pos[i * 3]!, y: pos[i * 3 + 1]!, z: pos[i * 3 + 2]!, radius: rad[i]! });
       groups.push(residueIndex ? residueIndex[i]! : i);
+      sceneIndex.push(i);
     }
     let cancelled = false, first = true;
     const p = cameraRef.current?.position;
     // Each pocket is drawn as the surface of the residues lining it; they stream in nearest first, and the
     // previous pockets stay until the first new one arrives
-    client.findPockets(atoms, { atomGroups: Int32Array.from(groups), viewPoint: p && { x: p.x, y: p.y, z: p.z } }, (_, pocket) => {
+    client.findPockets(atoms, { atomGroups: Int32Array.from(groups), viewPoint: p && { x: p.x, y: p.y, z: p.z } }, (index, pocket) => {
       if (cancelled) return;
-      const mesh = { positions: pocket.positions, normals: pocket.normals, indices: pocket.indices, color: pocketColor(pocket.score) };
+      const mesh = {
+        positions: pocket.positions, normals: pocket.normals, indices: pocket.indices, color: pocketColor(pocket.score),
+        index, lining: Int32Array.from(pocket.lining, (k) => sceneIndex[k]!),
+      };
       if (first) { first = false; setPockets([mesh]); } else setPockets((prev) => [...(prev ?? []), mesh]);
     })
       .then(() => { if (!cancelled && first) setPockets([]); })
@@ -223,6 +230,22 @@ export function MainView() {
       .catch((e) => { if (!(e instanceof DOMException && e.name === "AbortError")) console.error("Surface generation failed", e); });
     return () => { cancelled = true; };
   }, [atomsInput, surfaceOn, surface.kind, surface.probeRadius, surface.voxelSize]);
+
+  // With the surface on, pockets are painted on it (their lining atoms' patches) rather than drawn over it
+  const surfaceShowsPockets = surfaceOn && !!surfaceData?.length && !!pockets?.length;
+  const surfaceAtomColors = useMemo(() => {
+    if (!surfaceShowsPockets || !pockets) return null;
+    const byScene = new Map<number, (typeof pockets)[number]>();
+    // An atom lining several pockets takes the best one's colour
+    for (const pk of pockets) for (const a of pk.lining) { const o = byScene.get(a); if (!o || pk.index < o.index) byScene.set(a, pk); }
+    const out = new Float32Array(surfaceAtomScene.length * 3).fill(-1);
+    const c = new Color();
+    surfaceAtomScene.forEach((a, k) => {
+      const pk = byScene.get(a);
+      if (pk) { c.set(pk.color); out[k * 3] = c.r; out[k * 3 + 1] = c.g; out[k * 3 + 2] = c.b; }
+    });
+    return out;
+  }, [surfaceShowsPockets, pockets, surfaceAtomScene]);
 
   const renderControls = useMemo<RenderControls>(() => ({
     renderMode: representation,
@@ -269,7 +292,8 @@ export function MainView() {
             cameraRef={cameraRef}
             surfaceWireframe={surface.wireframe}
             surfaceOpacity={surface.opacity}
-            pockets={pockets}
+            pockets={surfaceShowsPockets ? null : pockets}
+            surfaceAtomColors={surfaceAtomColors}
             onLigandClick={toggleLigand}
             interactions={interactions}
             siteLigand={ligand}

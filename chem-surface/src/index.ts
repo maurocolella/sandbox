@@ -108,7 +108,8 @@ class AtomHash {
         if (!list) continue;
         for (const ai of list) {
           const a = this.atoms[ai]!;
-          const v = Math.hypot(x - a.x, y - a.y, z - a.z) - a.radius - inflate;
+          const dx = x - a.x, dy = y - a.y, dz = z - a.z;
+          const v = Math.sqrt(dx * dx + dy * dy + dz * dz) - a.radius - inflate; // Math.hypot is several times slower
           if (v < bestV) { bestV = v; best = ai; }
         }
       }
@@ -430,7 +431,13 @@ export function generate(kind: Kind, atoms: Atom[], opts: SurfaceOptions): Surfa
 
 const BRICK = 64; // nodes per brick side: larger bricks spend relatively less on their halo
 
-export interface SurfaceChunk { positions: Float32Array; normals: Float32Array; indices: Uint32Array }
+export interface SurfaceChunk {
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
+  /** Per vertex, the input atom nearest to it (by distance minus radius); not set for pocket meshes. */
+  atomIndex?: Uint32Array;
+}
 
 export interface StreamOptions extends SurfaceOptions {
   /** Bricks nearest this point come first (default: the grid's centre). */
@@ -493,22 +500,23 @@ export function generateStreaming(kind: Kind, atoms: Atom[], opts: StreamOptions
     const sub: Grid = { ox: g.ox + si0 * h, oy: g.oy + sj0 * h, oz: g.oz + sk0 * h, h, nx: si1 - si0, ny: sj1 - sj0, nz: sk1 - sk0 };
     const loX = sub.ox - margin, loY = sub.oy - margin, loZ = sub.oz - margin;
     const hiX = sub.ox + (sub.nx - 1) * h + margin, hiY = sub.oy + (sub.ny - 1) * h + margin, hiZ = sub.oz + (sub.nz - 1) * h + margin;
-    const local: Atom[] = [];
+    const local: Atom[] = [], localIndex: number[] = [];
     for (let a = Math.max(0, bi - reach); a <= Math.min(bx - 1, bi + reach); a++)
       for (let b = Math.max(0, bj - reach); b <= Math.min(by - 1, bj + reach); b++)
         for (let c = Math.max(0, bk - reach); c <= Math.min(bz - 1, bk + reach); c++)
           for (const idx of bins.get(binOf(a, b, c)) ?? []) {
             const at = atoms[idx]!;
-            if (at.x >= loX && at.x <= hiX && at.y >= loY && at.y <= hiY && at.z >= loZ && at.z <= hiZ) local.push(at);
+            if (at.x >= loX && at.x <= hiX && at.y >= loY && at.y <= hiY && at.z >= loZ && at.z <= hiZ) { local.push(at); localIndex.push(idx); }
           }
     if (local.length === 0) continue;
 
     const total = sub.nx * sub.ny * sub.nz;
+    const hash = new AtomHash(local, 4);
     let f: Float32Array;
     if (kind === "ses") {
       const fsas = new Float32Array(total).fill(FAR);
       sphereField(sub, local, probe, band, fsas, signal);
-      f = sesField(sub, local, probe, fsas, new AtomHash(local, 4), signal);
+      f = sesField(sub, local, probe, fsas, hash, signal);
       const fvdw = fsas.fill(FAR);
       sphereField(sub, local, 0, band, fvdw, signal);
       for (let n = 0; n < total; n++) if (fvdw[n]! < f[n]!) f[n] = fvdw[n]!;
@@ -517,7 +525,10 @@ export function generateStreaming(kind: Kind, atoms: Atom[], opts: StreamOptions
       sphereField(sub, local, inflate, band, f, signal);
     }
     const mesh = surfaceNets(sub, f, signal, { i0: i0 - si0, i1: i1 - si0, j0: j0 - sj0, j1: j1 - sj0, k0: k0 - sk0, k1: k1 - sk0 });
-    if (mesh.indices.length > 0) onChunk(mesh);
+    if (mesh.indices.length === 0) continue;
+    const atomIndex = assignAtoms(local, mesh.positions, hash);
+    for (let v = 0; v < atomIndex.length; v++) atomIndex[v] = localIndex[atomIndex[v]!]!;
+    onChunk({ ...mesh, atomIndex });
   }
 }
 
@@ -694,7 +705,10 @@ export class SurfaceStreamClient {
         worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
           const r = ev.data;
           if (r.id !== id || !live()) return;
-          if ("chunk" in r) onChunk?.({ positions: new Float32Array(r.chunk.positions), normals: new Float32Array(r.chunk.normals), indices: new Uint32Array(r.chunk.indices) }, r.index);
+          if ("chunk" in r) {
+            const { positions, normals, indices, atomIndex } = r.chunk;
+            onChunk?.({ positions: new Float32Array(positions), normals: new Float32Array(normals), indices: new Uint32Array(indices), atomIndex: atomIndex && new Uint32Array(atomIndex) }, r.index);
+          }
           else if (!r.ok) fail(new Error(r.error));
           else done(r);
         };
