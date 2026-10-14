@@ -74,7 +74,7 @@ export function MainView() {
   const { theme, toggle: toggleThemeOnly } = useTheme();
   const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface } = useRendererControls(theme);
   // A background still at the other theme's default follows the theme; a custom one stays. On a toggle
-  // this happens in the same update (one view transition); the effect covers OS theme changes.
+  // this happens in the same update as the theme; the effect covers OS theme changes.
   const toggleTheme = () => toggleThemeOnly((next) => {
     if (style.background === DEFAULT_BACKGROUND[next === "dark" ? "light" : "dark"]) setBackground(DEFAULT_BACKGROUND[next]);
   });
