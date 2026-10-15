@@ -8,12 +8,15 @@
    expanded, merged per role into one mesh with vertex colours.
  - Materials by role: matte protein, glossy clear-coated ligands so they read first, emissive interaction
    dashes; studio lighting from a gradient environment and one large soft key light.
- - Emphasis: with a ligand selected, the context (cartoon, atoms, bonds, surface) is desaturated and lightened
-   so the ligand, its binding site and interactions keep full colour; depth of field focused on the ligand
+ - Emphasis: with a ligand selected, the context (cartoon, atoms, bonds, surface) is desaturated (lightness
+   kept, so it doesn't wash out) so the ligand, its binding site and interactions keep full colour; depth of field focused on the ligand
    (or the view's centre); and depth cueing as
    PyMOL's: far geometry fades toward the background colour, by a rasterised depth pass of the same view.
  - The tracer's background is transparent; each frame is composited over the exact background colour (so
-   it matches the app's, untouched by tone mapping) with the depth cue applied.
+   it matches the app's, untouched by tone mapping): isolated bright pixels (unconverged glossy paths) are
+   replaced by their neighbours' mean, remaining grain is smoothed by a 3x3 filter over neighbours of similar
+   colour (so edges stay sharp), then tone mapping, a gentle contrast curve and saturation lift, and
+   the depth cue.
  Samples accumulate progressively; the canvas shows the image so far.
 */
 import * as THREE from "three";
@@ -121,21 +124,43 @@ function roleMaterial(role: PtRole, source: THREE.Material | null): THREE.MeshPh
 }
 
 /** Tone-mapped accumulation over the background colour, far geometry faded toward it (straight alpha). */
-function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, camera: THREE.PerspectiveCamera, fogNear: number, fogFar: number, fog: number) {
+function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, camera: THREE.PerspectiveCamera, fogNear: number, fogFar: number, fog: number, width: number, height: number) {
   return new THREE.ShaderMaterial({
     uniforms: {
-      map: { value: null }, depthMap: { value: depth }, background: { value: background.clone().convertLinearToSRGB() },
+      map: { value: null }, depthMap: { value: depth }, texel: { value: new THREE.Vector2(1 / width, 1 / height) }, background: { value: background.clone().convertLinearToSRGB() },
       cameraNear: { value: camera.near }, cameraFar: { value: camera.far }, fogNear: { value: fogNear }, fogFar: { value: fogFar }, fog: { value: fog },
     },
     vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
     fragmentShader: `
       #include <packing>
-      uniform sampler2D map; uniform sampler2D depthMap; uniform vec3 background;
+      uniform sampler2D map; uniform sampler2D depthMap; uniform vec3 background; uniform vec2 texel;
       uniform float cameraNear, cameraFar, fogNear, fogFar, fog;
       varying vec2 vUv;
+      float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
       void main() {
         vec4 c = texture2D(map, vUv);
+        // One pass over the 8 neighbours:
+        // - a pixel far brighter than all of them is an unconverged spike: take their mean;
+        // - otherwise a blend with those of similar colour (compressed HDR)
+        // Kept simple: richer versions (exp weights, depth per neighbour, a second loop) fail pipeline
+        // creation on ANGLE's Vulkan backend
+        vec3 c0 = c.rgb / (1.0 + c.rgb), sum = vec3(0.0), acc = c.rgb;
+        float brightest = 0.0, wsum = 1.0;
+        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+          if (x == 0 && y == 0) continue;
+          vec2 o = vec2(float(x), float(y));
+          vec3 n = texture2D(map, vUv + o * texel).rgb;
+          vec3 dc = n / (1.0 + n) - c0;
+          float sc = dot(dc, dc) / 0.004;
+          float w = 1.0 / ((1.0 + 0.5 * dot(o, o)) * (1.0 + sc + sc * sc));
+          sum += n; brightest = max(brightest, luma(n));
+          acc += n * w; wsum += w;
+        }
+        c.rgb = luma(c.rgb) > brightest * 1.3 + 0.03 ? sum / 8.0 : acc / wsum;
         vec4 rgb = linearToOutputTexel(vec4(toneMapping(c.rgb), 1.0));
+        // Gentle S-curve and saturation lift
+        rgb.rgb = mix(rgb.rgb, rgb.rgb * rgb.rgb * (3.0 - 2.0 * rgb.rgb), 0.35);
+        rgb.rgb = clamp(mix(vec3(luma(rgb.rgb)), rgb.rgb, 1.12), 0.0, 1.0);
         float d = texture2D(depthMap, vUv).x;
         float dist = d < 1.0 ? -perspectiveDepthToViewZ(d, cameraNear, cameraFar) : fogFar;
         rgb.rgb = mix(rgb.rgb, background, fog * smoothstep(fogNear, fogFar, dist));
@@ -149,12 +174,11 @@ function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, c
 /** The render scene: one merged mesh per role (and per colour for interaction dashes). */
 const CONTEXT: PtRole[] = ["cartoon", "atoms", "bonds", "surface"];
 
-/** Desaturates and lightens vertex colours in place (linear RGB), by `t` (0..1). */
+/** Desaturates vertex colours in place (linear RGB) toward their own luminance, by `t` (0..1). */
 function recede(colors: Float32Array, t: number) {
   for (let i = 0; i < colors.length; i += 3) {
     const l = 0.2126 * colors[i]! + 0.7152 * colors[i + 1]! + 0.0722 * colors[i + 2]!;
-    const pale = 0.45 + 0.4 * l; // toward a light grey that keeps some of the original lightness
-    for (let k = 0; k < 3; k++) colors[i + k] = colors[i + k]! + (pale - colors[i + k]!) * t;
+    for (let k = 0; k < 3; k++) colors[i + k] = colors[i + k]! + (l - colors[i + k]!) * t;
   }
 }
 
@@ -251,7 +275,7 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
   for (const { role, batch, source } of batches.values()) {
     if (batch.ni === 0) continue;
     const g = batch.geometry();
-    if (emphasis > 0 && CONTEXT.includes(role)) recede(g.attributes.color!.array as Float32Array, emphasis * 0.75);
+    if (emphasis > 0 && CONTEXT.includes(role)) recede(g.attributes.color!.array as Float32Array, emphasis * 0.9);
     g.computeBoundingBox();
     bounds.union(g.boundingBox!);
     scene.add(new THREE.Mesh(g, roleMaterial(role, source)));
@@ -296,17 +320,17 @@ export function startPathTrace(
     scene.background = null; // transparent: composited over the background below
     // Studio light: bright from above, dimmer below, and a soft key light above the camera's left shoulder
     const env = new GradientEquirectTexture(64);
-    env.topColor.set(0xffffff); env.bottomColor.set(0x3a3a3a); env.exponent = 1.5; env.update();
+    env.topColor.set(0xffffff); env.bottomColor.set(0x181818); env.exponent = 1.5; env.update();
     disposables.push(env);
     scene.environment = env;
-    (scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 1.6;
+    (scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 1.0;
     const size = bounds.getSize(new THREE.Vector3()).length() || 50;
     const camera = new PhysicalCamera(liveCamera.fov, settings.width / settings.height, liveCamera.near, liveCamera.far);
     camera.position.copy(liveCamera.position);
     camera.quaternion.copy(liveCamera.quaternion);
     camera.updateMatrixWorld();
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-    const key = new THREE.RectAreaLight(0xffffff, 6, size * 0.6, size * 0.6);
+    const key = new THREE.RectAreaLight(0xffffff, 10, size * 0.6, size * 0.6);
     key.position.copy(camera.position).addScaledVector(up, size * 0.6).addScaledVector(right, -size * 0.5);
     key.lookAt(target);
     scene.add(key);
@@ -330,14 +354,14 @@ export function startPathTrace(
     // The cue starts a third of the way into the scene's depth, as PyMOL's fog_start
     const sphere = bounds.getBoundingSphere(new THREE.Sphere()), centreDist = camera.position.distanceTo(sphere.center);
     const near = Math.max(camera.near, centreDist - sphere.radius), far = centreDist + sphere.radius;
-    const composite = compositeMaterial(depthTarget.depthTexture!, background, camera, near + (far - near) / 3, far, settings.fog);
+    const composite = compositeMaterial(depthTarget.depthTexture!, background, camera, near + (far - near) / 3, far, settings.fog, settings.width, settings.height);
     const quad = new FullScreenQuad(composite);
     disposables.push(composite, quad);
 
     const pt = new WebGLPathTracer(renderer);
     pt.renderDelay = 0; pt.fadeDuration = 0; pt.minSamples = 0;
     pt.dynamicLowRes = false; pt.rasterizeScene = false; pt.renderToCanvas = true;
-    pt.bounces = 6; pt.filterGlossyFactor = 0.5;
+    pt.bounces = 6; pt.filterGlossyFactor = 0.8;
     // Smaller tiles per frame at high resolutions keep each GPU submission short
     const tiles = Math.max(1, Math.ceil(Math.max(settings.width, settings.height) / 1400));
     pt.tiles.set(tiles, tiles);

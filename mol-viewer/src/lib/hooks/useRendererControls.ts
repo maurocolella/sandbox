@@ -21,7 +21,7 @@ export const RENDER_RESOLUTIONS = { "1K": 1024, "2K": 2048, "4K": 4096 } as cons
 export type RenderResolution = keyof typeof RENDER_RESOLUTIONS;
 export const RENDER_SAMPLES = [64, 128, 256, 512, 1024] as const;
 export interface RenderSettings { resolution: RenderResolution; samples: number; ligandFocus: number; depthOfField: number; fog: number }
-export const RENDER_DEFAULTS: RenderSettings = { resolution: "2K", samples: 256, ligandFocus: 0.5, depthOfField: 0.3, fog: 0.2 };
+export const RENDER_DEFAULTS: RenderSettings = { resolution: "2K", samples: 256, ligandFocus: 0.5, depthOfField: 0.3, fog: 0.1 };
 export const DEFAULT_BACKGROUND: Record<Theme, string> = { dark: "#111111", light: "#fafafa" };
 const stylingDefaults = (theme: Theme) => ({
   background: DEFAULT_BACKGROUND[theme], radiusScale: 0.25, hoverTint: "#ff00ff", onTopHighlight: true,
