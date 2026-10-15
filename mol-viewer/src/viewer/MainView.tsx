@@ -81,8 +81,8 @@ export function MainView() {
 
   const { theme, toggle: toggleThemeOnly } = useTheme();
   const { stores, reset, setBackground, parseOpts, style, spheres, selection, surface, labels } = useRendererControls(theme);
-  const [surfaceColor, setSurfaceColor] = usePersistentState<SurfaceColoring>("mol-viewer:surface-color", "uniform");
-  const [render, setRender] = usePersistentState<RenderSettings>("mol-viewer:render", RENDER_DEFAULTS);
+  const [surfaceColor, setSurfaceColor] = useState<SurfaceColoring>("uniform");
+  const [render, setRender] = useState<RenderSettings>(RENDER_DEFAULTS);
   // A background still at the other theme's default follows the theme; a custom one stays. On a toggle
   // this happens in the same update as the theme; the effect covers OS theme changes.
   const toggleTheme = () => toggleThemeOnly((next) => {
