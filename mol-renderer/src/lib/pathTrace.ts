@@ -9,14 +9,16 @@
  - Materials by role: matte protein, glossy clear-coated ligands so they read first, emissive interaction
    dashes; studio lighting from a gradient environment and one large soft key light.
  - Emphasis: with a ligand selected, the context (cartoon, atoms, bonds, surface) is desaturated (lightness
-   kept, so it doesn't wash out) so the ligand, its binding site and interactions keep full colour; depth of field focused on the ligand
-   (or the view's centre); and depth cueing as
+   kept, so it doesn't wash out) so the ligand, its binding site and interactions keep full colour; depth of
+   field with a broad sharp zone (the ligand and its binding site, or the scene's central depth) blurring
+   only beyond it; and depth cueing as
    PyMOL's: far geometry fades toward the background colour, by a rasterised depth pass of the same view.
  - The tracer's background is transparent; each frame is composited over the exact background colour (so
    it matches the app's, untouched by tone mapping): isolated bright pixels (unconverged glossy paths) are
    replaced by their neighbours' mean, remaining grain is smoothed by a 3x3 filter over neighbours of similar
-   colour (so edges stay sharp), then tone mapping, a gentle contrast curve and saturation lift, and
-   the depth cue.
+   colour (so edges stay sharp), then tone mapping, a gentle contrast curve on lightness (hues and saturation
+   kept) and the depth cue; then the depth of field, as a separable gather blur by each pixel's signed blur
+   radius (foreground blur spreads over sharp areas, background blur doesn't).
  Samples accumulate progressively; the canvas shows the image so far.
 */
 import * as THREE from "three";
@@ -36,6 +38,8 @@ export interface PathTraceSettings {
   fog: number;
   /** Point kept sharp (the selected ligand), else the view's centre. */
   focus?: THREE.Vector3 | null;
+  /** Radius (Å) around the focus point that stays sharp, beyond the binding site margin. */
+  focusRadius?: number;
   /** How much the context recedes when a ligand is in focus, 0 to 1. */
   emphasis: number;
   background: string;
@@ -124,9 +128,17 @@ function roleMaterial(role: PtRole, source: THREE.Material | null): THREE.MeshPh
 }
 
 /** Tone-mapped accumulation over the background colour, far geometry faded toward it (straight alpha). */
-function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, camera: THREE.PerspectiveCamera, fogNear: number, fogFar: number, fog: number, width: number, height: number) {
+interface Focus { distance: number; band: number; ramp: number; maxRadius: number } // view depths (Å) and px
+
+/**
+ * First pass: despeckled, tone-mapped (ACES, by hand: three skips tone mapping into render targets), graded,
+ * depth-cued colour over the background, in display (sRGB) values, with the signed blur radius in alpha
+ * (px; negative in front of the sharp zone).
+ */
+function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, camera: THREE.PerspectiveCamera, fogNear: number, fogFar: number, fog: number, width: number, height: number, focus: Focus) {
   return new THREE.ShaderMaterial({
     uniforms: {
+      focusDistance: { value: focus.distance }, focusBand: { value: focus.band }, focusRamp: { value: focus.ramp }, maxRadius: { value: focus.maxRadius },
       map: { value: null }, depthMap: { value: depth }, texel: { value: new THREE.Vector2(1 / width, 1 / height) }, background: { value: background.clone().convertLinearToSRGB() },
       cameraNear: { value: camera.near }, cameraFar: { value: camera.far }, fogNear: { value: fogNear }, fogFar: { value: fogFar }, fog: { value: fog },
     },
@@ -134,9 +146,17 @@ function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, c
     fragmentShader: `
       #include <packing>
       uniform sampler2D map; uniform sampler2D depthMap; uniform vec3 background; uniform vec2 texel;
-      uniform float cameraNear, cameraFar, fogNear, fogFar, fog;
+      uniform float cameraNear, cameraFar, fogNear, fogFar, fog, focusDistance, focusBand, focusRamp, maxRadius;
       varying vec2 vUv;
       float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+      // three's ACESFilmicToneMapping (exposure 1) and sRGB transfer
+      vec3 rrtOdt(vec3 v) { return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081); }
+      vec3 aces(vec3 c) {
+        const mat3 inM = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+        const mat3 outM = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+        return clamp(outM * rrtOdt(inM * (c / 0.6)), 0.0, 1.0);
+      }
+      vec3 srgb(vec3 v) { return mix(pow(v, vec3(0.41666)) * 1.055 - 0.055, v * 12.92, vec3(lessThanEqual(v, vec3(0.0031308)))); }
       void main() {
         vec4 c = texture2D(map, vUv);
         // One pass over the 8 neighbours:
@@ -157,16 +177,50 @@ function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, c
           acc += n * w; wsum += w;
         }
         c.rgb = luma(c.rgb) > brightest * 1.3 + 0.03 ? sum / 8.0 : acc / wsum;
-        vec4 rgb = linearToOutputTexel(vec4(toneMapping(c.rgb), 1.0));
-        // Gentle S-curve and saturation lift
-        rgb.rgb = mix(rgb.rgb, rgb.rgb * rgb.rgb * (3.0 - 2.0 * rgb.rgb), 0.35);
-        rgb.rgb = clamp(mix(vec3(luma(rgb.rgb)), rgb.rgb, 1.12), 0.0, 1.0);
+        vec3 rgb = srgb(aces(c.rgb));
+        // Gentle S-curve on lightness only, so hues and saturation are kept
+        float l = luma(rgb), lc = mix(l, l * l * (3.0 - 2.0 * l), 0.35);
+        rgb = clamp(rgb * (lc / max(l, 1e-4)), 0.0, 1.0);
         float d = texture2D(depthMap, vUv).x;
         float dist = d < 1.0 ? -perspectiveDepthToViewZ(d, cameraNear, cameraFar) : fogFar;
-        rgb.rgb = mix(rgb.rgb, background, fog * smoothstep(fogNear, fogFar, dist));
-        gl_FragColor = vec4(mix(background, rgb.rgb, clamp(c.a, 0.0, 1.0)), 1.0);
+        rgb = mix(rgb, background, fog * smoothstep(fogNear, fogFar, dist));
+        float off = d < 1.0 ? dist - focusDistance : 1e6;
+        float radius = sign(off) * maxRadius * clamp((abs(off) - focusBand) / focusRamp, 0.0, 1.0);
+        gl_FragColor = vec4(mix(background, rgb, clamp(c.a, 0.0, 1.0)), radius);
       }`,
-    toneMapped: true,
+    toneMapped: false,
+    depthTest: false, depthWrite: false,
+  });
+}
+
+const BLUR_TAPS = 8; // per side
+
+/**
+ * Depth of field, one axis: gathers taps along `dir` whose blur radius reaches this pixel. Taps in front of
+ * it spread over it; taps behind only as far as it is blurred itself, so a sharp zone keeps crisp edges.
+ */
+function blurMaterial(dir: THREE.Vector2, maxRadius: number, final: boolean) {
+  return new THREE.ShaderMaterial({
+    uniforms: { map: { value: null }, dir: { value: dir }, step: { value: Math.max(1, maxRadius / BLUR_TAPS) }, final: { value: final } },
+    vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+    fragmentShader: `
+      uniform sampler2D map; uniform vec2 dir; uniform float step; uniform bool final;
+      varying vec2 vUv;
+      void main() {
+        vec4 c = texture2D(map, vUv);
+        float r0 = abs(c.a);
+        vec3 acc = c.rgb; float wsum = 1.0;
+        for (int i = -${BLUR_TAPS}; i <= ${BLUR_TAPS}; i++) {
+          float d = abs(float(i)) * step;
+          vec4 t = texture2D(map, vUv + dir * float(i) * step);
+          float reach = t.a < c.a - 0.5 ? abs(t.a) : min(abs(t.a), r0);
+          float w = i == 0 ? 0.0 : clamp(reach - d + step, 0.0, step) / step;
+          acc += t.rgb * w; wsum += w;
+        }
+        // Alpha carries the blur radius between passes; the canvas gets opaque pixels
+        gl_FragColor = vec4(acc / wsum, final ? 1.0 : c.a);
+      }`,
+    toneMapped: false,
     depthTest: false, depthWrite: false,
   });
 }
@@ -335,13 +389,9 @@ export function startPathTrace(
     key.lookAt(target);
     scene.add(key);
 
-    // Depth of field: aperture (world units) grows with the focus distance
+    // Depth of field is applied when compositing (a lens has a single sharp plane; this keeps a broad zone sharp)
+    camera.bokehSize = 0;
     const focusPoint = settings.focus ?? target;
-    camera.focusDistance = camera.position.distanceTo(focusPoint);
-    if (settings.depthOfField > 0) {
-      camera.apertureBlades = 6;
-      camera.bokehSize = settings.depthOfField * camera.focusDistance * 0.05 * 2000; // radius = bokehSize * 0.5e-3
-    } else camera.bokehSize = 0;
 
     // Depth of the view, for the depth cue: rasterised once
     const depthTarget = new THREE.WebGLRenderTarget(settings.width, settings.height, { depthTexture: new THREE.DepthTexture(settings.width, settings.height, THREE.FloatType) });
@@ -354,9 +404,19 @@ export function startPathTrace(
     // The cue starts a third of the way into the scene's depth, as PyMOL's fog_start
     const sphere = bounds.getBoundingSphere(new THREE.Sphere()), centreDist = camera.position.distanceTo(sphere.center);
     const near = Math.max(camera.near, centreDist - sphere.radius), far = centreDist + sphere.radius;
-    const composite = compositeMaterial(depthTarget.depthTexture!, background, camera, near + (far - near) / 3, far, settings.fog, settings.width, settings.height);
+    // Sharp: the ligand and its binding site (6 Å beyond its extent), or else the middle half of the scene's depth
+    const focus: Focus = {
+      distance: camera.position.distanceTo(focusPoint),
+      band: settings.focus ? (settings.focusRadius ?? 5) + 6 : sphere.radius * 0.25,
+      ramp: sphere.radius * 0.35,
+      maxRadius: settings.depthOfField * 0.02 * settings.width,
+    };
+    const composite = compositeMaterial(depthTarget.depthTexture!, background, camera, near + (far - near) / 3, far, settings.fog, settings.width, settings.height, focus);
+    const blurX = blurMaterial(new THREE.Vector2(1 / settings.width, 0), focus.maxRadius, false), blurY = blurMaterial(new THREE.Vector2(0, 1 / settings.height), focus.maxRadius, true);
+    const passTarget = () => new THREE.WebGLRenderTarget(settings.width, settings.height, { type: THREE.HalfFloatType, depthBuffer: false });
+    const graded = passTarget(), blurred = passTarget();
     const quad = new FullScreenQuad(composite);
-    disposables.push(composite, quad);
+    disposables.push(composite, blurX, blurY, graded, blurred, quad);
 
     const pt = new WebGLPathTracer(renderer);
     pt.renderDelay = 0; pt.fadeDuration = 0; pt.minSamples = 0;
@@ -366,8 +426,15 @@ export function startPathTrace(
     const tiles = Math.max(1, Math.ceil(Math.max(settings.width, settings.height) / 1400));
     pt.tiles.set(tiles, tiles);
     pt.renderToCanvasCallback = (target, r) => {
-      composite.uniforms.map!.value = target.texture;
-      quad.render(r);
+      const pass = (material: THREE.ShaderMaterial, input: THREE.Texture, output: THREE.WebGLRenderTarget | null) => {
+        material.uniforms.map!.value = input;
+        quad.material = material;
+        r.setRenderTarget(output);
+        quad.render(r);
+      };
+      pass(composite, target.texture, graded);
+      pass(blurX, graded.texture, blurred);
+      pass(blurY, blurred.texture, null);
     };
     pt.setScene(scene, camera);
 

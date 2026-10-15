@@ -37,13 +37,15 @@ export function PathTraceHost({ apiRef, root, scene, atoms, bonds, focusLigand }
       start(settings, onProgress) {
         const live = root.current;
         if (!live || !(camera as THREE.PerspectiveCamera).isPerspectiveCamera) return () => {};
-        let focus: THREE.Vector3 | null = null;
+        let focus: THREE.Vector3 | null = null, focusRadius = 0;
         if (scene && focusLigand) {
           const idx = ligandAtoms(scene, focusLigand), P = scene.atoms.positions;
           if (idx.length) {
+            const at = (i: number) => new THREE.Vector3(P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!);
             focus = new THREE.Vector3();
-            for (const i of idx) focus.add(new THREE.Vector3(P[i * 3]!, P[i * 3 + 1]!, P[i * 3 + 2]!));
+            for (const i of idx) focus.add(at(i));
             focus.divideScalar(idx.length);
+            for (const i of idx) focusRadius = Math.max(focusRadius, at(i).distanceTo(focus));
           }
         }
         const target = controls?.target?.clone() ?? new THREE.Vector3();
@@ -55,7 +57,7 @@ export function PathTraceHost({ apiRef, root, scene, atoms, bonds, focusLigand }
           cancel = startPathTrace(live, camera as THREE.PerspectiveCamera, target, {
             atoms: atoms && scene ? { ...scene.atoms, radiusScale: atoms.radiusScale } : null,
             bonds: bonds && scene?.bonds ? { ...scene.bonds, positions: scene.atoms.positions } : null,
-          }, { ...settings, height, focus }, onProgress);
+          }, { ...settings, height, focus, focusRadius }, onProgress);
         });
         return () => { cancelled = true; cancel?.(); };
       },
