@@ -1,3 +1,4 @@
+/// <reference path="./three-mesh-bvh-workers.d.ts" />
 /*
  Title: pathTrace
  Description: Offline path-traced renders of the current view (three-gpu-pathtracer), in their own WebGL
@@ -10,22 +11,24 @@
    dashes; studio lighting from a gradient environment and one large soft key light.
  - Emphasis: with a ligand selected, the context (cartoon, atoms, bonds, surface) is desaturated (lightness
    kept, so it doesn't wash out) so the ligand, its binding site and interactions keep full colour; depth of
-   field with a broad sharp zone (the ligand and its binding site, or the scene's central depth) blurring
-   only beyond it, while ligands, binding-site residues and interactions are never blurred (a mask pass marks
-   their visible pixels); and depth cueing as
+   field: a region around the focus (the selected ligand, else the view's centre) stays sharp and blur grows
+   with distance from it, scaled to the focus distance so close-ups and wide shots behave alike; and depth
+   cueing as
    PyMOL's: far geometry fades toward the background colour, by a rasterised depth pass of the same view.
  - The tracer's background is transparent; each frame is composited over the exact background colour (so
    it matches the app's, untouched by tone mapping): isolated bright pixels (unconverged glossy paths) are
    replaced by their neighbours' mean, remaining grain is smoothed by a 3x3 filter over neighbours of similar
    colour (so edges stay sharp), then tone mapping, a gentle contrast curve on lightness (hues and saturation
    kept) and the depth cue; then the depth of field, as a separable gather blur by each pixel's signed blur
-   radius; nothing blurs into the sharp zone.
+   radius; nothing blurs into the sharp region.
+ The scene build yields to the browser as it goes and the BVH is built in a worker, so the page stays responsive.
  Samples accumulate progressively; the canvas shows the image so far.
 */
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { WebGLPathTracer, PhysicalCamera, GradientEquirectTexture } from "three-gpu-pathtracer";
+import { GenerateMeshBVHWorker } from "three-mesh-bvh/src/workers/GenerateMeshBVHWorker.js";
 
 export type PtRole = "cartoon" | "atoms" | "bonds" | "ligand" | "swap" | "site" | "interaction" | "surface" | "pocket";
 
@@ -75,6 +78,7 @@ const BOND_RADIUS = 0.06, BOND_COLOR = new THREE.Color(0xaaaaaa);
 class Batch {
   pos = new Float32Array(1 << 16); nor = new Float32Array(1 << 16); col = new Float32Array(1 << 16); idx = new Uint32Array(1 << 16);
   nv = 0; ni = 0;
+  private v = new THREE.Vector3();
   private grow<T extends Float32Array | Uint32Array>(a: T, need: number): T {
     if (need <= a.length) return a;
     let n = a.length; while (n < need) n *= 2;
@@ -89,12 +93,12 @@ class Batch {
     const P = g.attributes.position!, N = g.attributes.normal, C = g.attributes.color, I = g.index;
     const nv = P.count, ni = I ? I.count : nv;
     this.reserve(nv, ni);
-    const v = new THREE.Vector3(), base = this.nv;
+    const v = this.v, base = this.nv;
     for (let k = 0; k < nv; k++) {
-      v.fromBufferAttribute(P, k).applyMatrix4(m);
-      this.pos.set([v.x, v.y, v.z], (base + k) * 3);
-      if (N) { v.fromBufferAttribute(N as THREE.BufferAttribute, k).applyMatrix3(nm).normalize(); this.nor.set([v.x, v.y, v.z], (base + k) * 3); }
       const o = (base + k) * 3;
+      v.fromBufferAttribute(P, k).applyMatrix4(m);
+      this.pos[o] = v.x; this.pos[o + 1] = v.y; this.pos[o + 2] = v.z;
+      if (N) { v.fromBufferAttribute(N as THREE.BufferAttribute, k).applyMatrix3(nm).normalize(); this.nor[o] = v.x; this.nor[o + 1] = v.y; this.nor[o + 2] = v.z; }
       if (color) { this.col[o] = color.r; this.col[o + 1] = color.g; this.col[o + 2] = color.b; }
       else if (C) { this.col[o] = C.getX(k); this.col[o + 1] = C.getY(k); this.col[o + 2] = C.getZ(k); }
       else { this.col[o] = 1; this.col[o + 1] = 1; this.col[o + 2] = 1; }
@@ -129,26 +133,29 @@ function roleMaterial(role: PtRole, source: THREE.Material | null): THREE.MeshPh
 }
 
 /** Tone-mapped accumulation over the background colour, far geometry faded toward it (straight alpha). */
-interface Focus { distance: number; band: number; ramp: number; maxRadius: number } // view depths (Å) and px
+/** The sharp region: a sphere (view space, Å) and the distance beyond it over which blur reaches maxRadius (px). */
+interface Focus { centre: THREE.Vector3; band: number; ramp: number; maxRadius: number }
 
 /**
  * First pass: despeckled, tone-mapped (ACES, by hand: three skips tone mapping into render targets), graded,
  * depth-cued colour over the background, in display (sRGB) values, with the signed blur radius in alpha
  * (px; negative in front of the sharp zone).
  */
-function compositeMaterial(depth: THREE.DepthTexture, sharpMask: THREE.Texture, background: THREE.Color, camera: THREE.PerspectiveCamera, fogNear: number, fogFar: number, fog: number, width: number, height: number, focus: Focus) {
+function compositeMaterial(depth: THREE.DepthTexture, background: THREE.Color, camera: THREE.PerspectiveCamera, fogNear: number, fogFar: number, fog: number, width: number, height: number, focus: Focus) {
+  const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
   return new THREE.ShaderMaterial({
     uniforms: {
-      sharpMask: { value: sharpMask },
-      focusDistance: { value: focus.distance }, focusBand: { value: focus.band }, focusRamp: { value: focus.ramp }, maxRadius: { value: focus.maxRadius },
+      focusCentre: { value: focus.centre }, viewScale: { value: new THREE.Vector2(tanHalf * camera.aspect, tanHalf) },
+      focusBand: { value: focus.band }, focusRamp: { value: focus.ramp }, maxRadius: { value: focus.maxRadius },
       map: { value: null }, depthMap: { value: depth }, texel: { value: new THREE.Vector2(1 / width, 1 / height) }, background: { value: background.clone().convertLinearToSRGB() },
       cameraNear: { value: camera.near }, cameraFar: { value: camera.far }, fogNear: { value: fogNear }, fogFar: { value: fogFar }, fog: { value: fog },
     },
     vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
     fragmentShader: `
       #include <packing>
-      uniform sampler2D map; uniform sampler2D depthMap; uniform sampler2D sharpMask; uniform vec3 background; uniform vec2 texel;
-      uniform float cameraNear, cameraFar, fogNear, fogFar, fog, focusDistance, focusBand, focusRamp, maxRadius;
+      uniform sampler2D map; uniform sampler2D depthMap; uniform vec3 background; uniform vec2 texel;
+      uniform float cameraNear, cameraFar, fogNear, fogFar, fog, focusBand, focusRamp, maxRadius;
+      uniform vec3 focusCentre; uniform vec2 viewScale;
       varying vec2 vUv;
       float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
       // three's ACESFilmicToneMapping (exposure 1) and sRGB transfer
@@ -186,8 +193,10 @@ function compositeMaterial(depth: THREE.DepthTexture, sharpMask: THREE.Texture, 
         float d = texture2D(depthMap, vUv).x;
         float dist = d < 1.0 ? -perspectiveDepthToViewZ(d, cameraNear, cameraFar) : fogFar;
         rgb = mix(rgb, background, fog * smoothstep(fogNear, fogFar, dist));
-        float off = d < 1.0 ? dist - focusDistance : 1e6;
-        float radius = texture2D(sharpMask, vUv).r > 0.5 ? 0.0 : sign(off) * maxRadius * clamp((abs(off) - focusBand) / focusRamp, 0.0, 1.0);
+        // Blur grows with the distance (view space) from the sharp region; negative in front of the focus
+        vec3 p = vec3((vUv * 2.0 - 1.0) * viewScale * dist, -dist);
+        float t = d < 1.0 ? clamp((distance(p, focusCentre) - focusBand) / focusRamp, 0.0, 1.0) : 1.0;
+        float radius = (d < 1.0 && -p.z > -focusCentre.z ? -1.0 : 1.0) * maxRadius * t;
         gl_FragColor = vec4(mix(background, rgb, clamp(c.a, 0.0, 1.0)), radius);
       }`,
     toneMapped: false,
@@ -233,7 +242,6 @@ function blurMaterial(dir: THREE.Vector2, maxRadius: number, final: boolean) {
 
 /** The render scene: one merged mesh per role (and per colour for interaction dashes). */
 const CONTEXT: PtRole[] = ["cartoon", "atoms", "bonds", "surface"];
-const ALWAYS_SHARP: PtRole[] = ["ligand", "swap", "site", "interaction"];
 
 /** Desaturates vertex colours in place (linear RGB) toward their own luminance, by `t` (0..1). */
 function recede(colors: Float32Array, t: number) {
@@ -243,7 +251,18 @@ function recede(colors: Float32Array, t: number) {
   }
 }
 
-function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number): { scene: THREE.Scene; bounds: THREE.Box3; omitted: string[] } {
+/** Resolves on the next task when the current one has run long, so the page stays responsive. */
+function yielder(budget = 25) {
+  let last = performance.now();
+  return async () => {
+    if (performance.now() - last < budget) return;
+    await new Promise((r) => setTimeout(r, 0));
+    last = performance.now();
+  };
+}
+
+async function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number, isCancelled: () => boolean): Promise<{ scene: THREE.Scene; bounds: THREE.Box3; omitted: string[] } | null> {
+  const pause = yielder();
   const batches = new Map<string, { role: PtRole; batch: Batch; source: THREE.Material | null }>();
   const batchFor = (role: PtRole, source: THREE.Material | null) => {
     const key = role === "interaction" ? `${role}:${(source as THREE.MeshBasicMaterial).color.getHex()}` : role;
@@ -257,7 +276,7 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
 
   // Tagged meshes of the live scene
   live.updateMatrixWorld(true);
-  const visit = (o: THREE.Object3D, role: PtRole | null) => {
+  const visit = async (o: THREE.Object3D, role: PtRole | null): Promise<void> => {
     if (!o.visible) return;
     const r = (o.userData.ptRole as PtRole | undefined) ?? role;
     const mesh = o as THREE.Mesh;
@@ -270,6 +289,7 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
         const inst = o as THREE.InstancedMesh;
         if (inst.isInstancedMesh) {
           for (let i = 0; i < inst.count; i++) {
+            if ((i & 255) === 0) await pause();
             inst.getMatrixAt(i, im);
             m.multiplyMatrices(o.matrixWorld, im); nm.getNormalMatrix(m);
             if (inst.instanceColor) inst.getColorAt(i, c); else c.setRGB(1, 1, 1);
@@ -284,9 +304,10 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
         }
       }
     }
-    for (const child of o.children) visit(child, r);
+    for (const child of o.children) await visit(child, r);
   };
-  visit(live, null);
+  await visit(live, null);
+  if (isCancelled()) return null;
 
   // Atoms and bonds from the data, at the finest detail that fits the budget
   const atoms = data.atoms;
@@ -298,6 +319,7 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
       sphere.computeVertexNormals();
       const batch = batchFor("atoms", null), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
       for (let i = 0; i < atoms.count; i++) {
+        if ((i & 1023) === 0) { await pause(); if (isCancelled()) return null; }
         const r = atoms.radii[i]! * atoms.radiusScale;
         m.compose(p.set(atoms.positions[i * 3]!, atoms.positions[i * 3 + 1]!, atoms.positions[i * 3 + 2]!), q, s.set(r, r, r));
         nm.getNormalMatrix(m);
@@ -318,6 +340,7 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
       const batch = batchFor("bonds", null), up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3(), mid = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
       const P = bonds.positions;
       for (let k = 0; k < bonds.count; k++) {
+        if ((k & 1023) === 0) { await pause(); if (isCancelled()) return null; }
         const a = bonds.indexA[k]! * 3, b = bonds.indexB[k]! * 3;
         d.set(P[b]! - P[a]!, P[b + 1]! - P[a + 1]!, P[b + 2]! - P[a + 2]!);
         const len = d.length();
@@ -335,13 +358,12 @@ function buildScene(live: THREE.Object3D, data: StructureData, emphasis: number)
   const bounds = new THREE.Box3();
   for (const { role, batch, source } of batches.values()) {
     if (batch.ni === 0) continue;
+    await pause();
     const g = batch.geometry();
     if (emphasis > 0 && CONTEXT.includes(role)) recede(g.attributes.color!.array as Float32Array, emphasis * 0.9);
     g.computeBoundingBox();
     bounds.union(g.boundingBox!);
-    const mesh = new THREE.Mesh(g, roleMaterial(role, source));
-    mesh.userData.ptRole = role;
-    scene.add(mesh);
+    scene.add(new THREE.Mesh(g, roleMaterial(role, source)));
   }
   return { scene, bounds, omitted };
 }
@@ -366,17 +388,29 @@ export function startPathTrace(
     onProgress({ stage, samples, total: settings.samples, elapsed: performance.now() - t0, canvas, omitted });
 
   const disposables: { dispose(): void }[] = [];
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) return; // finishing, then closing the preview, both clean up
+    cleaned = true;
     cancelAnimationFrame(frame);
     for (const d of disposables) d.dispose();
     renderer.dispose();
   };
 
-  // Let the "preparing" state paint before the (synchronous) scene and BVH build
+  // The view as it is now: the build takes a while and the user may keep moving the camera
+  const camera = new PhysicalCamera(liveCamera.fov, settings.width / settings.height, liveCamera.near, liveCamera.far);
+  camera.position.copy(liveCamera.position);
+  camera.quaternion.copy(liveCamera.quaternion);
+  camera.updateMatrixWorld();
+  target = target.clone();
+
   report("preparing", 0, []);
-  const startTimer = setTimeout(() => {
-    if (cancelled) return;
-    const { scene, bounds, omitted } = buildScene(live, data, settings.focus ? settings.emphasis : 0);
+  const bvhWorker = new GenerateMeshBVHWorker();
+  disposables.push(bvhWorker);
+  void (async () => {
+    const built = await buildScene(live, data, settings.focus ? settings.emphasis : 0, () => cancelled);
+    if (!built || cancelled) return;
+    const { scene, bounds, omitted } = built;
     scene.traverse((o) => { const mesh = o as THREE.Mesh; if (mesh.isMesh) disposables.push(mesh.geometry, mesh.material as THREE.Material); });
 
     const background = new THREE.Color(settings.background);
@@ -388,10 +422,6 @@ export function startPathTrace(
     scene.environment = env;
     (scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = 1.0;
     const size = bounds.getSize(new THREE.Vector3()).length() || 50;
-    const camera = new PhysicalCamera(liveCamera.fov, settings.width / settings.height, liveCamera.near, liveCamera.far);
-    camera.position.copy(liveCamera.position);
-    camera.quaternion.copy(liveCamera.quaternion);
-    camera.updateMatrixWorld();
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     const key = new THREE.RectAreaLight(0xffffff, 10, size * 0.6, size * 0.6);
     key.position.copy(camera.position).addScaledVector(up, size * 0.6).addScaledVector(right, -size * 0.5);
@@ -410,33 +440,19 @@ export function startPathTrace(
     renderer.setRenderTarget(null);
     disposables.push(scene.overrideMaterial, depthTarget, depthTarget.depthTexture!);
     scene.overrideMaterial = null;
-    // Visible pixels of ligands, binding sites and interactions, which depth of field leaves alone
-    const maskTarget = new THREE.WebGLRenderTarget(settings.width, settings.height);
-    const white = new THREE.MeshBasicMaterial({ color: 0xffffff }), black = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    const materials = new Map<THREE.Mesh, THREE.Material>();
-    scene.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      materials.set(mesh, mesh.material as THREE.Material);
-      mesh.material = ALWAYS_SHARP.includes(mesh.userData.ptRole) ? white : black;
-    });
-    renderer.setRenderTarget(maskTarget);
-    renderer.setClearColor(0x000000, 1);
-    renderer.render(scene, camera);
-    renderer.setRenderTarget(null);
-    for (const [mesh, material] of materials) mesh.material = material;
-    disposables.push(maskTarget, white, black);
     // The cue starts a third of the way into the scene's depth, as PyMOL's fog_start
     const sphere = bounds.getBoundingSphere(new THREE.Sphere()), centreDist = camera.position.distanceTo(sphere.center);
     const near = Math.max(camera.near, centreDist - sphere.radius), far = centreDist + sphere.radius;
-    // Sharp: the ligand and its binding site (6 Å beyond its extent), or else the middle half of the scene's depth
+    // Sharp: the ligand plus 4 Å, or a tenth of the focus distance around the view's centre; full blur half the
+    // focus distance beyond
+    const focusDistance = camera.position.distanceTo(focusPoint);
     const focus: Focus = {
-      distance: camera.position.distanceTo(focusPoint),
-      band: settings.focus ? (settings.focusRadius ?? 5) + 6 : sphere.radius * 0.25,
-      ramp: sphere.radius * 0.35,
+      centre: focusPoint.clone().applyMatrix4(camera.matrixWorldInverse),
+      band: settings.focus ? (settings.focusRadius ?? 5) + 4 : focusDistance * 0.1,
+      ramp: focusDistance * 0.5,
       maxRadius: settings.depthOfField * 0.015 * settings.width,
     };
-    const composite = compositeMaterial(depthTarget.depthTexture!, maskTarget.texture, background, camera, near + (far - near) / 3, far, settings.fog, settings.width, settings.height, focus);
+    const composite = compositeMaterial(depthTarget.depthTexture!, background, camera, near + (far - near) / 3, far, settings.fog, settings.width, settings.height, focus);
     const blurX = blurMaterial(new THREE.Vector2(1 / settings.width, 0), focus.maxRadius, false), blurY = blurMaterial(new THREE.Vector2(0, 1 / settings.height), focus.maxRadius, true);
     const passTarget = () => new THREE.WebGLRenderTarget(settings.width, settings.height, { type: THREE.HalfFloatType, depthBuffer: false });
     const graded = passTarget(), blurred = passTarget();
@@ -461,7 +477,9 @@ export function startPathTrace(
       pass(blurX, graded.texture, blurred);
       pass(blurY, blurred.texture, null);
     };
-    pt.setScene(scene, camera);
+    pt.setBVHWorker(bvhWorker as unknown as Parameters<WebGLPathTracer["setBVHWorker"]>[0]);
+    await pt.setSceneAsync(scene, camera);
+    if (cancelled) return;
 
     const loop = () => {
       if (cancelled) return;
@@ -480,11 +498,10 @@ export function startPathTrace(
       cleanup();
     };
     frame = requestAnimationFrame(loop);
-  }, 30);
+  })();
 
   return () => {
     cancelled = true;
-    clearTimeout(startTimer);
     cleanup();
   };
 }
